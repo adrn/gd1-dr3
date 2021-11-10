@@ -33,15 +33,17 @@ from patsy import dmatrix
 
 #from an earlier version which had tighter constraints on CMD
 phi1_stream_pm_model = np.load('../data/phi1_stream_from_pm_model.npy')
+phi1_stream_pm_model = phi1_stream_pm_model.reshape(len(phi1_stream_pm_model), )
 stream_pm10 = np.load('../data/true_pm1_from_model.npy')
-spline_pm1 = InterpolatedUnivariateSpline(phi1_stream_pm_model, stream_pm10)
+spline_pm1 = InterpolatedUnivariateSpline(phi1_stream_pm_model[::10], stream_pm10[::10])
 stream_pm20 = np.load('../data/true_pm2_from_model.npy')
-spline_pm2 = InterpolatedUnivariateSpline(phi1_stream_pm_model, stream_pm20)
+spline_pm2 = InterpolatedUnivariateSpline(phi1_stream_pm_model[::10], stream_pm20[::10])
 
 
 est_track = np.load('../data/gd1_track.npy')
 n = len(est_track)
-spline_phi2 = InterpolatedUnivariateSpline(est_track[:,0], est_track[:,1])
+spline_phi2 = UnivariateSpline(phi1_stream_pm_model.reshape(est_track.shape)[::10], 
+                                           est_track[::10])
 
 
 def searchsorted(known_array, test_array): #known array is longer
@@ -182,10 +184,10 @@ def pm_model_spline(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, bkg_ind,
         
         est_pm1_nodes = spline_pm1(np.linspace(-101, 21, n_pm_nodes+2))
         est_pm2_nodes = spline_pm2(np.linspace(-101, 21, n_pm_nodes+2))
-        lower_pm1_bounds = est_pm1_nodes - 2
-        lower_pm2_bounds = est_pm2_nodes - 2
-        upper_pm1_bounds = est_pm1_nodes + 2
-        upper_pm2_bounds = est_pm2_nodes + 2
+        lower_pm1_bounds = est_pm1_nodes - 3
+        lower_pm2_bounds = est_pm2_nodes - 1.5
+        upper_pm1_bounds = est_pm1_nodes + 3
+        upper_pm2_bounds = est_pm2_nodes + 1.5
         lower_pm = np.vstack([lower_pm1_bounds, lower_pm2_bounds]).T
         upper_pm = np.vstack([upper_pm1_bounds, upper_pm2_bounds]).T
         est_pm_nodes = np.vstack([est_pm1_nodes, est_pm2_nodes]).T
@@ -274,11 +276,11 @@ def phi2_model_spline(model, phi1_stream_all, phi2_stream_all, bkg_ind, n_track_
         B_track = np.asarray(B_track)
         
         est_phi2_nodes = spline_phi2(np.linspace(-101, 21, n_track_nodes+2))
-        lower_phi2 = est_phi2_nodes - 2
-        upper_phi2 = est_phi2_nodes + 2
+        lower_phi2 = est_phi2_nodes - 3
+        upper_phi2 = est_phi2_nodes + 3
         
         track_nodes = pm.Uniform('track_nodes', lower=lower_phi2, upper=upper_phi2, 
-                                   shape = B_track.shape[1], testval=est_phi2_nodes)
+                                   shape = B_track.shape[1])
         
         mean_phi2_stream_all = pm.Deterministic('mean_phi2_stream_all', tt.dot(B_track_all, track_nodes))
         mean_phi2_stream_all = mean_phi2_stream_all.reshape(phi2_stream_all.shape)
@@ -328,12 +330,12 @@ def spur_model(model, phi1_stream_all, phi2_stream_all, bkg_ind):
     spur_sel_all = np.where((phi1_stream_all > -40) & (phi1_stream_all < -25))[0]
     phi1_spur_all, phi2_spur_all = phi1_stream_all[spur_sel_all], phi2_stream_all[spur_sel_all]
     left_all = phi1_stream_all[np.where((phi1_stream_all < -40) & (phi1_stream_all > -101))[0]]
-    right_all = phi1_stream_all[np.where((phi1_stream_all > -25) & (phi1_stream_all > -101))[0]]
+    right_all = phi1_stream_all[np.where((phi1_stream_all > -25) & (phi1_stream_all < 21))[0]]
     
     spur_sel = np.where((phi1_stream > -40) & (phi1_stream < -25))[0]
     phi1_spur, phi2_spur = phi1_stream[spur_sel], phi2_stream[spur_sel]
     left = phi1_stream[np.where((phi1_stream < -40) & (phi1_stream > -101))[0]]
-    right = phi1_stream[np.where((phi1_stream > -25) & (phi1_stream > -101))[0]]
+    right = phi1_stream[np.where((phi1_stream > -25) & (phi1_stream < 21))[0]]
     
     left_all = pm.Deterministic('left_all', -1E20*tt.exp(np.ones(left_all.shape)))
     right_all = pm.Deterministic('right_all', -1E20*tt.exp(np.ones(right_all.shape)))
@@ -358,6 +360,136 @@ def spur_model(model, phi1_stream_all, phi2_stream_all, bkg_ind):
     loglike_fg_spur = tt.concatenate([left, loglike_fg_spur_i, right])
     
     return loglike_fg_spur, loglike_fg_spur_all
+
+def short_pm_model_spur(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, bkg_ind):
+    with model:
+        obs_pm = obs_pm_all[bkg_ind]
+        obs_pm_cov = obs_pm_cov_all[bkg_ind]
+        phi1_stream = phi1_stream_all[bkg_ind]
+        
+        mean_pm_stream = pm.Uniform('mean_pm_stream', lower = [-15, -4], upper = [-11, -1], shape =2)
+        
+        ln_std_pm_stream = pm.Uniform('ln_std_pm_stream', lower=[-4, -4], upper = [0,0], shape=2, testval = [-3, -3])
+        std_pm_stream = pm.Deterministic('std_pm_stream', tt.exp(ln_std_pm_stream))
+        cov_pm_stream = tt.diag(std_pm_stream**2)
+        full_cov_all = obs_pm_cov_all + cov_pm_stream
+        full_cov = obs_pm_cov + cov_pm_stream
+        
+        #Determinant calculation
+        a, a_all = full_cov[:, 0, 0], full_cov_all[:, 0, 0]
+        b = c = full_cov[:, 0, 1]
+        b_all = c_all = full_cov_all[:, 0, 1]
+        d, d_all = full_cov[:, 1, 1], full_cov_all[:, 1, 1]
+        det, det_all = a * d - b * c, a_all*d_all - b_all*c_all
+        
+        diff = obs_pm - mean_pm_stream
+        diff_all = obs_pm_all - mean_pm_stream
+        numer = (
+            d * diff[:, 0] ** 2 
+            + a * diff[:, 1] ** 2
+            - (b + c) * diff[:, 0] * diff[:, 1]
+        )
+        numer_all = (
+            d_all * diff_all[:, 0] ** 2 
+            + a_all * diff_all[:, 1] ** 2
+            - (b_all + c_all) * diff_all[:, 0] * diff_all[:, 1]
+        )
+        quad, quad_all = numer / det, numer_all / det_all
+        
+        loglike_fg = -0.5 * (quad + tt.log(det) + 2 * tt.log(2*np.pi))
+        loglike_fg_all = -0.5 * (quad_all + tt.log(det_all) + 2 * tt.log(2*np.pi))
+        
+    return loglike_fg, loglike_fg_all
+
+def short_phi2_model_spur(model, phi1_stream_all, phi2_stream_all, bkg_ind):
+    with model:
+        phi1_stream = phi1_stream_all[bkg_ind]
+        phi2_stream = phi2_stream_all[bkg_ind]
+        
+        mean_phi2_stream = pm.Uniform('mean_phi2_stream', lower = -0.5, upper = 0.5)
+        
+        std_phi2_stream = pm.Uniform('std_phi2_stream', lower = 0, upper = 0.5, testval = 0.2)
+        var_phi2_stream = pm.Deterministic('var_phi2_stream', std_phi2_stream**2)
+
+        diff_phi2_all = phi2_stream_all - mean_phi2_stream
+        loglike_fg_phi2_all = -0.5 * (tt.log(var_phi2_stream) + ((diff_phi2_all**2)/var_phi2_stream) + tt.log(2*np.pi))
+        
+        diff_phi2 = phi2_stream - mean_phi2_stream
+        loglike_fg_phi2 = -0.5 * (tt.log(var_phi2_stream) + ((diff_phi2**2)/var_phi2_stream) + tt.log(2*np.pi))
+        loglike_phi2_test = pm.Deterministic('loglike_phi2_test', loglike_fg_phi2)
+        
+    return loglike_fg_phi2, loglike_fg_phi2_all
+
+def short_spur_model(model, phi1_stream_all, phi2_stream_all, obs_pm_all, obs_pm_cov_all, bkg_ind):
+    phi1_stream = phi1_stream_all[bkg_ind]
+    phi2_stream = phi2_stream_all[bkg_ind]
+    obs_pm = obs_pm_all[bkg_ind]
+    obs_pm_cov = obs_pm_cov_all[bkg_ind]
+    
+    # track for the spur as well:
+    
+    spur_sel = np.where((phi1_stream > -40) & (phi1_stream < -27))[0]
+    phi1_spur, phi2_spur = phi1_stream[spur_sel], phi2_stream[spur_sel]
+    left_phi2 = phi1_stream[np.where((phi1_stream < -40) & (phi1_stream > -51))[0]]
+    right_phi2 = phi1_stream[np.where((phi1_stream > -27) & (phi1_stream < -19))[0]]
+    
+    left1_phi2 = pm.Deterministic('left_phi2', -np.inf*tt.exp(np.ones(left_phi2.shape)))
+    right1_phi2 = pm.Deterministic('right_phi2', -np.inf*tt.exp(np.ones(right_phi2.shape)))
+     
+    b4 = pm.Uniform('spur_track_scale', lower=0.2, upper=1)
+    
+    mean_spur_track = pm.Deterministic('mean_spur_track', b4*tt.sqrt(phi1_spur + 40))
+    
+    std_phi2_spur = pm.Uniform('std_phi2_spur', lower=0, upper=0.2, testval = 0.1)
+    var_phi2_spur = pm.Deterministic('var_phi2_spur', std_phi2_spur**2)
+    
+    diff_spur = phi2_spur - mean_spur_track
+    loglike_fg_spur_i_phi2 = -0.5 * (tt.log(var_phi2_spur) + ((diff_spur**2)/var_phi2_spur) + tt.log(2*np.pi))
+    loglike_fg_spur_phi2 = tt.concatenate([left1_phi2, loglike_fg_spur_i_phi2, right1_phi2])
+    
+    
+    obs_pm_spur = obs_pm[spur_sel]
+    obs_pm_cov_spur = obs_pm_cov[spur_sel]
+
+    mean_pm_spur = pm.Uniform('mean_pm_spur', lower = [-15, -5], upper = [-8, 0], shape =2)
+
+    ln_std_pm_spur = pm.Uniform('ln_std_pm_spur', lower=[-4, -4], upper = [0,0], shape=2)
+    std_pm_spur = pm.Deterministic('std_pm_spur', tt.exp(ln_std_pm_spur))
+    cov_pm_spur = tt.diag(std_pm_spur**2)
+    full_cov_spur_all = obs_pm_cov_all + cov_pm_spur
+    full_cov_spur = obs_pm_cov_spur + cov_pm_spur
+
+    #Determinant calculation
+    a, a_all = full_cov_spur[:, 0, 0], full_cov_spur_all[:, 0, 0]
+    b = c = full_cov_spur[:, 0, 1]
+    b_all = c_all = full_cov_spur_all[:, 0, 1]
+    d, d_all = full_cov_spur[:, 1, 1], full_cov_spur_all[:, 1, 1]
+    det, det_all = a * d - b * c, a_all*d_all - b_all*c_all
+
+    diff = obs_pm_spur - mean_pm_spur
+    diff_all = obs_pm_all - mean_pm_spur
+    numer = (
+        d * diff[:, 0] ** 2 
+        + a * diff[:, 1] ** 2
+        - (b + c) * diff[:, 0] * diff[:, 1]
+    )
+    numer_all = (
+        d_all * diff_all[:, 0] ** 2 
+        + a_all * diff_all[:, 1] ** 2
+        - (b_all + c_all) * diff_all[:, 0] * diff_all[:, 1]
+    )
+    quad, quad_all = numer / det, numer_all / det_all
+
+    loglike_fg_spur_i_pm = -0.5 * (quad + tt.log(det) + 2 * tt.log(2*np.pi))
+    loglike_fg_spur_i_pm = loglike_fg_spur_i_pm.reshape(loglike_fg_spur_i_phi2.shape)
+    loglike_fg_spur_pm = tt.concatenate([left1_phi2, loglike_fg_spur_i_pm, right1_phi2])
+    
+    loglike_pm_spur_test = pm.Deterministic('loglike_pm_spur_test', loglike_fg_spur_pm)
+    loglike_phi2_spur_test = pm.Deterministic('loglike_phi2_spur_test', loglike_fg_spur_phi2)
+    
+    loglike_fg_spur = loglike_fg_spur_pm + loglike_fg_spur_phi2
+    
+    return loglike_fg_spur
    
 
 def plot_pm_memb_prob(obs_pm, post_member_prob):
