@@ -1,27 +1,31 @@
-import numpy as np
+# When I have a bit of time I should write this more efficiently (have class take Fitpert class instead of rewriting)
+import sys
+sys.path.append('../code/')
+import fit_perturber as fp
 
+import warnings
+warnings.filterwarnings("ignore")
+
+import numpy as np
+from pyia import GaiaData
 import gala.coordinates as gc
 import gala.potential as gp
 from gala.potential import NullPotential
 import gala.dynamics as gd
 from gala.dynamics import mockstream as ms
 from gala.units import galactic
-#from gala.dynamics.nbody import DirectNBody
 from Nbody_gala import DirectNBody
 
 import astropy.coordinates as coord
 import astropy.units as u
 from astropy.io import fits
-from pyia import GaiaData
-#from gravhopper import Simulation, IC
-import matplotlib.pyplot as plt
-from scipy.interpolate import UnivariateSpline, InterpolatedUnivariateSpline
+import scipy
 from sklearn.neighbors import KernelDensity
 
-class FitPert:
+
+class PerturbOpt:
     
     def __init__(self):
-        
         #########################
         ## DATA FOR COMPARISON ##
         #########################
@@ -34,12 +38,6 @@ class FitPert:
         ## CURRENT STREAM WITHOUT THE PERTURBER ##
         ##########################################
         df = ms.FardalStreamDF(random_state=np.random.RandomState(42))
-        #df = ms.FardalStreamDF()
-        
-        #gd1_init = gc.GD1Koposov10(phi1 = -13*u.degree, phi2=0*u.degree, distance=8.84*u.kpc,
-        #                          pm_phi1_cosphi2=-10.28*u.mas/u.yr,
-        #                          pm_phi2=-2.43*u.mas/u.yr,
-        #                          radial_velocity = -182*u.km/u.s)
         gd1_init = gc.GD1Koposov10(phi1 = -13*u.degree, phi2=0*u.degree, distance=8.836*u.kpc,
                                   pm_phi1_cosphi2=-10.575*u.mas/u.yr,
                                   pm_phi2=-2.439*u.mas/u.yr,
@@ -60,10 +58,9 @@ class FitPert:
         rv_bonaca_data = fits.open('../data/rv_catalog.fits')[1].data
         self.gd1_rv_bonaca = rv_bonaca_data[rv_bonaca_data.pmmem & rv_bonaca_data.cmdmem & rv_bonaca_data.vrmem & rv_bonaca_data.fehmem]
         
-    
-
+        
     def pre_fitting(self, vals):
-
+        
         self.b, self.psi, self.z, self.v_z, self.vpsi, self.t_int, self.logm = vals
         
         self.core = 1.05 * (10**self.logm / (10**8))**0.5
@@ -102,10 +99,8 @@ class FitPert:
 
         self.perturber_pot = gp.HernquistPotential(m=10**self.logm*u.Msun, c=self.core*u.pc, units=galactic)
         #self.perturber_pot = gp.KeplerPotential(m=10**self.logm*u.Msun, units=galactic)
-        #self.perturber_pot = gp.NFWPotential(m=10**self.logm*u.Msun, r_s=self.core*45*u.pc, units=galactic)
         
-        return self.site_at_impact_w0, np.sqrt(vxstream**2 + vystream**2 + vzstream**2)
-
+        return self.site_at_impact_w0
 
     def get_cyl_rotation(self): #borrowed from Adrian Price-Whelan's streampunch github repo
         L = self.site_at_impact_w0.angular_momentum()
@@ -149,18 +144,17 @@ class FitPert:
 
         # This should be in Galactocentric Cartesian coordinates now!
         return gd.PhaseSpacePosition(pos, vel)
-
-
+    
+    
     def nbody(self):
         #################################################
         ## PERTURBER PROPERTIES AT TIME OF INTERACTION ##
         #################################################
         w0_pert = self.get_perturber_w0_at_impact()
         pert_energy = gp.hamiltonian.Hamiltonian(self.mw).energy(w0_pert)
-        print(pert_energy.value[0])
 
         if pert_energy.value[0] > 0:
-            return False, False
+            self.current, self.orbits = False, False
         else:
             #############################################
             ## PERTURBER PROPERTIES BEFORE INTERACTION ##
@@ -189,15 +183,42 @@ class FitPert:
 
             # what should be compared to present time
             self.current = self.orbits[-1, 1:].to_coord_frame(gc.GD1)
-            return self.current, self.orbits
-        
-    def loglik_model_kde(self, params):
+        return self.current, self.orbits
+    
+    def lnprior(self, params):
+        self.lnp = 0
         
         self.pre_fitting(params)
+        
+        if (self.b < 0) | (self.b > 100):
+            self.lnp += -np.inf
+            return self.lnp
+        elif (self.psi < 0) | (self.psi > 360):
+            self.lnp += -np.inf
+            return self.lnp
+        elif (self.z < -0.2) | (self.z > 0.6):
+            self.lnp += -np.inf
+            return self.lnp
+        elif (self.v_z < 50) | (self.v_z > 250):
+            self.lnp += -np.inf
+            return self.lnp
+        elif (self.vpsi < 1) | (self.vpsi > 150):
+            self.lnp += -np.inf
+            return self.lnp
+        elif (self.t_int < 50) | (self.t_int > 1200):
+            self.lnp += -np.inf
+            return self.lnp
+        elif (self.logm < 5.8) | (self.logm > 6.8):
+            self.lnp += -np.inf
+            return self.lnp
+    
+    def loglik_model_kde(self, params):
+        
+        #self.pre_fitting(params)
         current, orbits = self.nbody()
         if not current:
-            return np.nan, np.nan, np.nan, np.nan, np.nan
-        
+            self.ll = -np.inf
+
         else:
             #############################
             ## EVALUATE LOG-LIKELIHOOD ##
@@ -235,39 +256,26 @@ class FitPert:
                                                         self.gd1_rv_bonaca.Vrad]).T)
             loglike_rv = np.sum(loglike_rv)
 
-            ll = loglike_phi2 + loglike_pm1 + loglike_pm2 + loglike_rv
-
-             #########################
-            ## TESTING FOR THE GAP ##
-            #########################
-            no_spur_model = model_window[(model_window.phi2.value < 0.6)]
-
-            #take the average count in the range -45 to -55, which seems to be heavily populated and consistent
-            high_dens_model = no_spur_model[(no_spur_model.phi1.value < -45) & (no_spur_model.phi1.value > -54)]
-
-            low_dens_model = no_spur_model[(no_spur_model.phi1.value < -39) & (no_spur_model.phi1.value > -43)]
-            model_dens_ratio = (len(low_dens_model)/4) / (len(high_dens_model)/9)
-
-
-
-            return ll, kde_phi2, kde_pm1, kde_pm2, kde_rv
+            self.ll = loglike_phi2 + loglike_pm1 + loglike_pm2 + loglike_rv
+        print(params, self.ll)
+        
+        return self.ll
     
-    def loglik_data_kde(self, params):
-        self.prefitting(params)
-        self.nbody()
-        
-        #############################
-        ## EVALUATE LOG-LIKELIHOOD ##
-        #############################
-
-        #cut output of model to window
-        model_window = self.current[(self.current.phi1.value > -65) & (self.current.phi1.value < -22)]
-        kde_phi2_data = KernelDensity(kernel='gaussian', bandwidth=0.1).fit(
-                            np.array([(data.phi1.flatten() + 46)/10, data.phi2.flatten()]).T)
-        loglike_phi2 = kde_phi2_data.score_samples(np.array([(model_window.phi1.value+46)/10, 
-                                                         model_window.phi2.value]).T)
-        loglike_phi2 = np.sum(loglike_phi2)
-        ll = loglike_phi2
-        return ll, kde_phi2_data, model_window
-        
-#if __name__ == '__main__':
+    def logprob(self, params):
+        self.lnprior(params)
+        if not np.isfinite(self.lnp):
+            return -np.inf 
+        return self.lnp + self.loglik_model_kde(params)
+    
+    def min_logprob(self, params):
+        return -self.logprob(params)
+    
+    
+if __name__ == '__main__':
+    params = [1, 0, 0.2, 170, 10, 820, 6.2]
+    PertOpt = PerturbOpt()
+    #PertOpt.loglik_model_kde(params)
+    res = scipy.optimize.minimize(PertOpt.min_logprob,x0=np.array(params),
+                                  method='Nelder-Mead',
+                                  #method='L-BFGS-B',
+                                  options={'disp':True})

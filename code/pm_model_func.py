@@ -457,7 +457,7 @@ def short_spur_model(model, phi1_stream_all, phi2_stream_all, obs_pm_all, obs_pm
     
     mean_spur_track = pm.Deterministic('mean_spur_track', b4*tt.sqrt(phi1_spur + 40))
     
-    std_phi2_spur = pm.Uniform('std_phi2_spur', lower=0, upper=0.2, testval = 0.1)
+    std_phi2_spur = pm.Uniform('std_phi2_spur', lower=0, upper=0.4, testval = 0.1)
     var_phi2_spur = std_phi2_spur**2
     
     diff_spur = phi2_spur - mean_spur_track
