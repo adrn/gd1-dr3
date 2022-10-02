@@ -53,7 +53,7 @@ def _log_gauss_mass(a, b):
     elif case_central:
         out = mass_case_central(a, b)
     else:
-        raise RuntimeError("huh")
+        out = np.nan
     return jnp.real(out)  # discard ~0j
 
 
