@@ -14,12 +14,9 @@ def _log_diff(x, y):
 
 
 def _log_gauss_mass(a, b):
-    """a,b here are standard normal limits, i.e., if you clip at values my_a, my_b:
-        a = (my_a - mean) / std
-        b = (my_b - mean) / std
-
-    Unlike in scipy, a and b have to be scalars
-    """
+    """Log of Gaussian probability mass within an interval"""
+    a, b = jnp.atleast_1d(a), jnp.atleast_1d(b)
+    a, b = jnp.broadcast_arrays(a, b)
 
     # Calculations in right tail are inaccurate, so we'll exploit the
     # symmetry and work only in the left tail
@@ -44,16 +41,16 @@ def _log_gauss_mass(a, b):
         # underflows, it was insignificant; if both terms underflow,
         # the result can't accurately be represented in logspace anyway
         # because sc.log1p(x) ~ x for small x.
-        return jnp.log1p(-special.ndtr(a) - special.ndtr(-b))
+        return special.log1p(-special.ndtr(a) - special.ndtr(-b))
 
-    if case_left:
-        out = mass_case_left(a, b)
-    elif case_right:
-        out = mass_case_right(a, b)
-    elif case_central:
-        out = mass_case_central(a, b)
-    else:
-        out = np.nan
+    # _lazyselect not working; don't care to debug it
+    out = jnp.full_like(a, fill_value=jnp.nan, dtype=jnp.complex128)
+    if case_left.any():
+        out.at[case_left].set(mass_case_left(a[case_left], b[case_left]))
+    if case_right.any():
+        out.at[case_right].set(mass_case_right(a[case_right], b[case_right]))
+    if case_central.any():
+        out.at[case_central].set(mass_case_central(a[case_central], b[case_central]))
     return jnp.real(out)  # discard ~0j
 
 
