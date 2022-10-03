@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsci
 
-from .truncnorm import truncnorm_logpdf
+from .truncnorm import logpdf as truncnorm_logpdf
 
 __all__ = ["ln_normal", "ln_simpson"]
 
