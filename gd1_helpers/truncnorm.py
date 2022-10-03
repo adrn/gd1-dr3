@@ -52,7 +52,8 @@ def _log_gauss_mass(a, b):
 @_wraps(osp_stats.truncnorm.logpdf, update_doc=False)
 def logpdf(x, loc=0, scale=1, a=-np.inf, b=np.inf):
     x, loc, scale, a, b = _promote_args_inexact("truncnorm.logpdf", x, loc, scale, a, b)
-    return lax.sub(stats.norm.logpdf(x, loc, scale), _log_gauss_mass(a, b)).reshape(x.shape)
+    val = lax.sub(stats.norm.logpdf(x, loc, scale), _log_gauss_mass(a, b))
+    return val.reshape(x.shape)
 
 
 @_wraps(osp_stats.norm.pdf, update_doc=False)
