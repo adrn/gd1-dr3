@@ -42,18 +42,17 @@ def _log_gauss_mass(a, b):
         # because sc.log1p(x) ~ x for small x.
         return jnp.log1p(-special.ndtr(a) - special.ndtr(-b))
 
-    # _lazyselect not working; don't care to debug it
-    out = jnp.full_like(a, fill_value=jnp.nan, dtype=jnp.complex128)
-    out = jnp.where(case_left, mass_case_left(a, b), out)
-    out = jnp.where(case_right, mass_case_right(a, b), out)
-    out = jnp.where(case_central, mass_case_central(a, b), out)
+    out = jnp.select(
+        [case_left, case_right, case_central],
+        [mass_case_left(a, b), mass_case_right(a, b), mass_case_central(a, b)]
+    )
     return jnp.real(out)  # discard ~0j
 
 
 @_wraps(osp_stats.truncnorm.logpdf, update_doc=False)
 def logpdf(x, loc=0, scale=1, a=-np.inf, b=np.inf):
     x, loc, scale, a, b = _promote_args_inexact("truncnorm.logpdf", x, loc, scale, a, b)
-    return lax.sub(stats.norm.logpdf(x, loc, scale), _log_gauss_mass(a, b))
+    return lax.sub(stats.norm.logpdf(x, loc, scale), _log_gauss_mass(a, b)).reshape(x.shape)
 
 
 @_wraps(osp_stats.norm.pdf, update_doc=False)
