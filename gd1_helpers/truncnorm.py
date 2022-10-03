@@ -2,7 +2,6 @@ import numpy as np
 import scipy.stats as osp_stats
 
 from jax import lax
-from jax._src.lax.lax import _const as _lax_const
 from jax._src.numpy import lax_numpy as jnp
 from jax._src.numpy.util import _wraps
 from jax._src.numpy.lax_numpy import _promote_args_inexact
@@ -10,7 +9,7 @@ from jax.scipy import special, stats
 
 
 def _log_diff(x, y):
-    return special.logsumexp([x, y], b=[1, -1], axis=0)
+    return special.logsumexp(jnp.array([x, y + np.pi * 1j]), axis=0)
 
 
 def _log_gauss_mass(a, b):
@@ -41,16 +40,13 @@ def _log_gauss_mass(a, b):
         # underflows, it was insignificant; if both terms underflow,
         # the result can't accurately be represented in logspace anyway
         # because sc.log1p(x) ~ x for small x.
-        return special.log1p(-special.ndtr(a) - special.ndtr(-b))
+        return jnp.log1p(-special.ndtr(a) - special.ndtr(-b))
 
     # _lazyselect not working; don't care to debug it
     out = jnp.full_like(a, fill_value=jnp.nan, dtype=jnp.complex128)
-    if case_left.any():
-        out.at[case_left].set(mass_case_left(a[case_left], b[case_left]))
-    if case_right.any():
-        out.at[case_right].set(mass_case_right(a[case_right], b[case_right]))
-    if case_central.any():
-        out.at[case_central].set(mass_case_central(a[case_central], b[case_central]))
+    out = jnp.where(case_left, mass_case_left(a, b), out)
+    out = jnp.where(case_right, mass_case_right(a, b), out)
+    out = jnp.where(case_central, mass_case_central(a, b), out)
     return jnp.real(out)  # discard ~0j
 
 
