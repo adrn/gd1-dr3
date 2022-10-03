@@ -2,7 +2,9 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsci
 
-__all__ = ['ln_normal', 'ln_simpson']
+from .truncnorm import truncnorm_logpdf
+
+__all__ = ["ln_normal", "ln_simpson"]
 
 
 @jax.jit
@@ -33,6 +35,20 @@ def ln_simpson(ln_y, x):
 
 @jax.jit
 def two_norm_mixture_ln_prob(p, data, data_err):
+    """
+    A mixture of two normal distributions convolved with a normal uncertainty
+    distribution.
+
+        p = (w, mu_1, mu_2, ln_s1, ln_s2)
+
+    where
+
+        variance1 = exp(2 * ln_s1)
+        variance2 = variance1 + exp(2 * ln_s2)
+
+    so that the 2nd component is always wider. `w` is the mixture weight.
+
+    """
     w, mu1, mu2, ln_s1, ln_s2 = p
     var1 = jnp.exp(2 * ln_s1) + data_err**2
     var2 = var1 + jnp.exp(2 * ln_s2) + data_err**2
@@ -40,26 +56,38 @@ def two_norm_mixture_ln_prob(p, data, data_err):
     ln_term1 = ln_normal(data, mu1, var1)
     ln_term2 = ln_normal(data, mu2, var2)
 
-    ln_prob = jnp.logaddexp(
-        ln_term1 + jnp.log(w),
-        ln_term2 + jnp.log(1 - w)
-    )
+    ln_prob = jnp.logaddexp(ln_term1 + jnp.log(w), ln_term2 + jnp.log(1 - w))
 
     return ln_prob
 
 
 @jax.jit
 def two_truncnorm_mixture_ln_prob(p, data, data_err, lower, upper):
+    """
+    A mixture of two truncated normal distributions, truncated to between `lower` and
+    `upper`, convolved with a normal uncertainty distribution.
+
+        p = (w, mu_1, mu_2, ln_s1, ln_s2)
+
+    where
+
+        variance1 = exp(2 * ln_s1)
+        variance2 = variance1 + exp(2 * ln_s2)
+
+    so that the 2nd component is always wider. `w` is the mixture weight.
+
+    """
     w, mu1, mu2, ln_s1, ln_s2 = p
     std1 = jnp.sqrt(jnp.exp(2 * ln_s1) + data_err**2)
     std2 = jnp.sqrt(std1**2 + jnp.exp(2 * ln_s2) + data_err**2)
 
-    ln_term1 = truncnorm_logpdf(data, mu1, std1, (lower - mu1) / std1, (upper - mu1) / std1)
-    ln_term2 = truncnorm_logpdf(data, mu2, std2, (lower - mu2) / std2, (upper - mu2) / std2)
-
-    ln_prob = jnp.logaddexp(
-        ln_term1 + jnp.log(w),
-        ln_term2 + jnp.log(1 - w)
+    ln_term1 = truncnorm_logpdf(
+        data, mu1, std1, (lower - mu1) / std1, (upper - mu1) / std1
     )
+    ln_term2 = truncnorm_logpdf(
+        data, mu2, std2, (lower - mu2) / std2, (upper - mu2) / std2
+    )
+
+    ln_prob = jnp.logaddexp(ln_term1 + jnp.log(w), ln_term2 + jnp.log(1 - w))
 
     return ln_prob
