@@ -5,12 +5,7 @@ import jax.numpy as jnp
 from jax_cosmo.scipy.interpolate import InterpolatedUnivariateSpline
 
 from .base import Model
-from .helpers import (
-    ln_normal,
-    ln_simpson,
-    two_norm_mixture_ln_prob,
-    two_truncnorm_mixture_ln_prob,
-)
+from .helpers import ln_normal, ln_simpson
 
 __all__ = ["StreamModel"]
 
