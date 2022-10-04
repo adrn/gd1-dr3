@@ -1,6 +1,8 @@
 from functools import partial
 
 import jax
+import jax.numpy as jnp
+from jax.scipy.special import logsumexp
 
 from .background import BackgroundModel
 from .base import Model
@@ -54,10 +56,13 @@ class JointModel(Model):
         # for name, Component in cls.components.items():
         #     lls[name] = Component.ln_likelihood(component_pars[name], data)
 
-        ll = 0.0
+        ln_Vs = []
+        lls = []
         for name, Component in cls.components.items():
-            ll += Component.ln_likelihood(component_pars[name], data)
-        return ll
+            ln_Vn, lln = Component.ln_likelihood(component_pars[name], data)
+            ln_Vs.append(ln_Vn)
+            lls.append(lln)
+        return -jnp.exp(logsumexp(ln_Vs)) + logsumexp(lls, axis=0).sum()
 
     @classmethod
     @partial(jax.jit, static_argnums=(0,))

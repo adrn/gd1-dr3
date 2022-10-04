@@ -42,7 +42,8 @@ class Model:
     @partial(jax.jit, static_argnums=(0,))
     def ln_posterior(cls, pars_arr, data, *args):
         pars = cls.unpack_pars(pars_arr)
-        return cls.ln_likelihood(pars, data, *args) + cls.ln_prior(pars)
+        ln_V, ln_dens = cls.ln_likelihood(pars, data, *args)
+        return -jnp.exp(ln_V) + ln_dens.sum() + cls.ln_prior(pars)
 
     @classmethod
     @partial(jax.jit, static_argnums=(0,))

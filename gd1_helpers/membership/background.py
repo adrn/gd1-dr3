@@ -138,7 +138,7 @@ class BackgroundModel(Model):
         ln_dens_grid = cls.ln_n0(cls.integ_grid_phi1, pars)
         ln_V = ln_simpson(ln_dens_grid, x=cls.integ_grid_phi1)
 
-        return -jnp.exp(ln_V) + ln_dens.sum()
+        return (ln_V, ln_dens)
 
     @classmethod
     @partial(jax.jit, static_argnums=(0,))
