@@ -129,10 +129,9 @@ class BackgroundModel(Model):
         ln_dens = (
             cls.ln_n0(data["phi1"], pars)
             + cls.phi2(data, pars)
-            +
-            # cls.plx(data, pars['mean_plx']) +
-            cls.pm1(data, pars)
+            + cls.pm1(data, pars)
             + cls.pm2(data, pars)
+            # + cls.plx(data, pars['mean_plx'])
         )
 
         ln_dens_grid = cls.ln_n0(cls.integ_grid_phi1, pars)
