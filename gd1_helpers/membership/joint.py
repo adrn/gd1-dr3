@@ -2,7 +2,9 @@ from functools import partial
 
 import jax
 
-from . import BackgroundModel, Model, StreamModel
+from .background import BackgroundModel
+from .base import Model
+from .stream import StreamModel
 
 __all__ = ["JointModel"]
 
