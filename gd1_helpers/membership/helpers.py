@@ -4,13 +4,22 @@ import jax.scipy as jsci
 
 from .truncnorm import logpdf as truncnorm_logpdf
 
-__all__ = ["ln_normal", "ln_simpson"]
+__all__ = ["ln_normal", "ln_truncated_normal", "ln_simpson"]
 
 
 @jax.jit
 def ln_normal(x, mu, var):
     """Evaluate the log-normal probability"""
     return -0.5 * (jnp.log(2 * jnp.pi * var) + (x - mu) ** 2 / var)
+
+
+@jax.jit
+def ln_truncated_normal(x, mu, var, lower=-jnp.inf, upper=jnp.inf):
+    """Evaluate the log of a truncated normal probability"""
+    std = jnp.sqrt(var)
+    return truncnorm_logpdf(
+        x, loc=mu, scale=std, a=(lower - mu) / std, b=(upper - mu) / std
+    )
 
 
 @jax.jit
@@ -78,15 +87,11 @@ def two_truncnorm_mixture_ln_prob(p, data, data_err, lower, upper):
 
     """
     w, mu1, mu2, ln_s1, ln_s2 = p
-    std1 = jnp.sqrt(jnp.exp(2 * ln_s1) + data_err**2)
-    std2 = jnp.sqrt(std1**2 + jnp.exp(2 * ln_s2) + data_err**2)
+    var1 = jnp.exp(2 * ln_s1) + data_err**2
+    var2 = var1 + jnp.exp(2 * ln_s2) + data_err**2
 
-    ln_term1 = truncnorm_logpdf(
-        data, mu1, std1, (lower - mu1) / std1, (upper - mu1) / std1
-    )
-    ln_term2 = truncnorm_logpdf(
-        data, mu2, std2, (lower - mu2) / std2, (upper - mu2) / std2
-    )
+    ln_term1 = ln_truncated_normal(data, mu1, var1, lower=lower, upper=upper)
+    ln_term2 = ln_truncated_normal(data, mu2, var2, lower=lower, upper=upper)
 
     ln_prob = jnp.logaddexp(ln_term1 + jnp.log(w), ln_term2 + jnp.log(1 - w))
 
