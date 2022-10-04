@@ -27,6 +27,7 @@ class BackgroundModel(Model):
       $\mu(\phi_1)$, and two log-variances $\sigma_1^2(\phi_1)$, $\sigma_2^2(\phi_1) =
       \sigma_1^2(\phi_1) + \hat{\sigma}_2^2(\phi_1)$
     """
+    name = "background"
 
     phi2_cut = None
     pm1_cut = None

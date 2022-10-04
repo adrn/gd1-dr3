@@ -11,6 +11,8 @@ __all__ = ["StreamModel"]
 
 
 class StreamModel(Model):
+    name = "stream"
+
     phi2_cut = None
     pm1_cut = None
 
@@ -66,10 +68,10 @@ class StreamModel(Model):
     def pm1(cls, data, pars):
         """ln_likelihood for pm1*cos(phi2)"""
         mean_pm1_spl = InterpolatedUnivariateSpline(
-            cls.phi2_knots, pars["mean_pm1"], k=3
+            cls.pm1_knots, pars["mean_pm1"], k=3
         )
         ln_std_pm1_spl = InterpolatedUnivariateSpline(
-            cls.phi2_knots, pars["ln_std_pm1"], k=3
+            cls.pm1_knots, pars["ln_std_pm1"], k=3
         )
         ln_var = jnp.logaddexp(2 * ln_std_pm1_spl(data["phi1"]), 2 * data["pm1_error"])
         return ln_truncated_normal(
@@ -85,10 +87,10 @@ class StreamModel(Model):
     def pm2(cls, data, pars):
         """ln_likelihood for pm2"""
         mean_pm2_spl = InterpolatedUnivariateSpline(
-            cls.phi2_knots, pars["mean_pm2"], k=3
+            cls.pm2_knots, pars["mean_pm2"], k=3
         )
         ln_std_pm2_spl = InterpolatedUnivariateSpline(
-            cls.phi2_knots, pars["ln_std_pm2"], k=3
+            cls.pm2_knots, pars["ln_std_pm2"], k=3
         )
         ln_var = jnp.logaddexp(2 * ln_std_pm2_spl(data["phi1"]), 2 * data["pm2_error"])
         return ln_normal(data["pm2"], mean_pm2_spl(data["phi1"]), jnp.exp(ln_var))
