@@ -121,8 +121,11 @@ class StreamModel(Model):
             "mean_pm2": 3.0,
             "ln_std_pm2": 0.5,
         }
-        for name in cls.param_names.keys():
-            for i in range(1, len(getattr(cls, name))):
+        for name, size in cls.param_names.items():
+            if name not in prior_stds:
+                continue
+
+            for i in range(1, size):
                 lp += ln_normal(pars[name][i], pars[name][i - 1], prior_stds[name])
 
         return lp
