@@ -1,10 +1,9 @@
 import numpy as np
 import scipy.stats as osp_stats
-
 from jax import lax
 from jax._src.numpy import lax_numpy as jnp
-from jax._src.numpy.util import _wraps
 from jax._src.numpy.lax_numpy import _promote_args_inexact
+from jax._src.numpy.util import _wraps
 from jax.scipy import special, stats
 
 
@@ -44,7 +43,7 @@ def _log_gauss_mass(a, b):
 
     out = jnp.select(
         [case_left, case_right, case_central],
-        [mass_case_left(a, b), mass_case_right(a, b), mass_case_central(a, b)]
+        [mass_case_left(a, b), mass_case_right(a, b), mass_case_central(a, b)],
     )
     return jnp.real(out)  # discard ~0j
 

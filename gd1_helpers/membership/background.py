@@ -6,10 +6,10 @@ from jax_cosmo.scipy.interpolate import InterpolatedUnivariateSpline
 
 from .base import Model
 from .helpers import (
-    two_truncnorm_mixture_ln_prob,
-    two_norm_mixture_ln_prob,
-    ln_simpson,
     ln_normal,
+    ln_simpson,
+    two_norm_mixture_ln_prob,
+    two_truncnorm_mixture_ln_prob,
 )
 
 __all__ = ["BackgroundModel"]
