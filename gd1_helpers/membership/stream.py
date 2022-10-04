@@ -25,6 +25,7 @@ class StreamModel(Model):
     integ_grid_phi1 = jnp.arange(-100, 20 + 1e-3, 0.1)
 
     param_names = {
+        "ln_n0": len(ln_n0_knots),
         "mean_phi2": len(phi2_knots),
         "ln_std_phi2": len(phi2_knots),
         # "mean_plx": len(plx_knots),
