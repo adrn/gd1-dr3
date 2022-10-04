@@ -74,11 +74,11 @@ class StreamModel(Model):
         ln_std_pm1_spl = InterpolatedUnivariateSpline(
             cls.pm1_knots, pars["ln_std_pm1"], k=3
         )
-        ln_var = jnp.exp(2 * ln_std_pm1_spl(data["phi1"])) + data["pm1_error"] ** 2
+        var = jnp.exp(2 * ln_std_pm1_spl(data["phi1"])) + data["pm1_error"] ** 2
         return ln_truncated_normal(
             data["pm1"],
             mean_pm1_spl(data["phi1"]),
-            jnp.exp(ln_var),
+            var,
             lower=cls.pm1_cut[0],
             upper=cls.pm1_cut[1],
         )
@@ -93,8 +93,8 @@ class StreamModel(Model):
         ln_std_pm2_spl = InterpolatedUnivariateSpline(
             cls.pm2_knots, pars["ln_std_pm2"], k=3
         )
-        ln_var = jnp.exp(2 * ln_std_pm2_spl(data["phi1"])) + data["pm2_error"] ** 2
-        return ln_normal(data["pm2"], mean_pm2_spl(data["phi1"]), jnp.exp(ln_var))
+        var = jnp.exp(2 * ln_std_pm2_spl(data["phi1"])) + data["pm2_error"] ** 2
+        return ln_normal(data["pm2"], mean_pm2_spl(data["phi1"]), var)
 
     @classmethod
     @partial(jax.jit, static_argnums=(0,))
