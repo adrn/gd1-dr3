@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from jax_cosmo.scipy.interpolate import InterpolatedUnivariateSpline
 
 from .base import Model
-from .helpers import ln_normal, ln_simpson
+from .helpers import ln_normal, ln_simpson, ln_truncated_normal
 
 __all__ = ["StreamModel"]
 
@@ -71,8 +71,14 @@ class StreamModel(Model):
         ln_std_pm1_spl = InterpolatedUnivariateSpline(
             cls.phi2_knots, pars["ln_std_pm1"], k=3
         )
-        ln_std = jnp.logaddexp(2 * ln_std_pm1_spl(data["phi1"]), 2 * data["pm1_error"])
-        return ln_normal(data["pm1"], mean_pm1_spl(data["phi1"]), jnp.exp(ln_std))
+        ln_var = jnp.logaddexp(2 * ln_std_pm1_spl(data["phi1"]), 2 * data["pm1_error"])
+        return ln_truncated_normal(
+            data["pm1"],
+            mean_pm1_spl(data["phi1"]),
+            jnp.exp(ln_var),
+            lower=cls.pm1_cut[0],
+            upper=cls.pm1_cut[1],
+        )
 
     @classmethod
     @partial(jax.jit, static_argnums=(0,))
@@ -84,8 +90,8 @@ class StreamModel(Model):
         ln_std_pm2_spl = InterpolatedUnivariateSpline(
             cls.phi2_knots, pars["ln_std_pm2"], k=3
         )
-        ln_std = jnp.logaddexp(2 * ln_std_pm2_spl(data["phi1"]), 2 * data["pm2_error"])
-        return ln_normal(data["pm2"], mean_pm2_spl(data["phi1"]), jnp.exp(ln_std))
+        ln_var = jnp.logaddexp(2 * ln_std_pm2_spl(data["phi1"]), 2 * data["pm2_error"])
+        return ln_normal(data["pm2"], mean_pm2_spl(data["phi1"]), jnp.exp(ln_var))
 
     @classmethod
     @partial(jax.jit, static_argnums=(0,))
