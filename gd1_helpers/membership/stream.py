@@ -92,9 +92,9 @@ class StreamModel(Model):
     def ln_likelihood(cls, pars, data):
         ln_dens = (
             cls.ln_n0(data["phi1"], pars)
-            + cls.phi2(data, pars["mean_phi2"], pars["ln_std_phi2"])
-            + cls.pm1(data, pars["mean_pm1"], pars["ln_std_pm1"])
-            + cls.pm2(data, pars["mean_pm2"], pars["ln_std_pm2"])
+            + cls.phi2(data, pars)
+            + cls.pm1(data, pars)
+            + cls.pm2(data, pars)
             # + cls.plx(data, pars["mean_plx"])
         )
         ln_dens_grid = cls.ln_n0(cls.integ_grid_phi1, pars)
