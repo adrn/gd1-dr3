@@ -9,6 +9,9 @@ __all__ = ["Model"]
 class Model:
     param_names = {}
 
+    # TODO: could implement __init_subclass__() to enforce that subclasses have the
+    # necessary ln_likelihood(), ln_prior(), ...
+
     @classmethod
     @partial(jax.jit, static_argnums=(0,))
     def unpack_pars(cls, p_arr):
