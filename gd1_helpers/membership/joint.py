@@ -6,6 +6,7 @@ from jax.scipy.special import logsumexp
 
 from .background import BackgroundModel
 from .base import Model
+from .spur import SpurModel
 from .stream import StreamModel
 
 __all__ = ["JointModel"]
@@ -14,7 +15,7 @@ __all__ = ["JointModel"]
 class JointModel(Model):
     components = {
         ModelComponent.name: ModelComponent
-        for ModelComponent in [BackgroundModel, StreamModel]
+        for ModelComponent in [BackgroundModel, StreamModel, SpurModel]
     }
 
     param_names = {}
@@ -34,6 +35,11 @@ class JointModel(Model):
                 if k.endswith(component_name):
                     tmp[k[: -(len(component_name) + 1)]] = v
             pars[component_name] = tmp
+
+        # HACK:
+        for name in ["mean_pm1", "ln_std_pm1", "mean_pm2", "ln_std_pm2"]:
+            pars["spur"][name] = pars["stream"][name]
+
         return pars
 
     @classmethod
@@ -49,12 +55,7 @@ class JointModel(Model):
     @classmethod
     @partial(jax.jit, static_argnums=(0,))
     def ln_likelihood(cls, flat_pars, data):
-        # TODO: this should save the arrays, and there should be a way of getting just
-        # the prob density not the poisson likelihood (for membership probabilities)
         component_pars = cls.unpack_component_pars(flat_pars)
-        # lls = {}
-        # for name, Component in cls.components.items():
-        #     lls[name] = Component.ln_likelihood(component_pars[name], data)
 
         ln_Vs = []
         lls = []
@@ -62,15 +63,12 @@ class JointModel(Model):
             ln_Vn, lln = Component.ln_likelihood(component_pars[name], data)
             ln_Vs.append(ln_Vn)
             lls.append(lln)
-        return -jnp.exp(logsumexp(ln_Vs)) + logsumexp(lls, axis=0).sum()
+        return logsumexp(jnp.array(ln_Vs)), logsumexp(jnp.array(lls), axis=0)
 
     @classmethod
     @partial(jax.jit, static_argnums=(0,))
     def ln_prior(cls, flat_pars):
         component_pars = cls.unpack_component_pars(flat_pars)
-        # lps = {}
-        # for name, Component in cls.components.items():
-        #     lps[name] = Component.ln_prior(component_pars[name])
 
         lp = 0.0
         for name, Component in cls.components.items():
