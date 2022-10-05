@@ -60,7 +60,7 @@ class SpurModel(StreamModel):
             ln_normal(
                 pars["mean_phi2"],
                 1.3 * jax.nn.sigmoid((cls.phi2_knots - -39) / 2.5),
-                3.0,
+                0.5,
             )
         )
 
