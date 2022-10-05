@@ -59,7 +59,7 @@ class SpurModel(StreamModel):
         lp += jnp.sum(
             ln_normal(
                 pars["mean_phi2"],
-                1.3 * jax.nn.sigmoid((cls.phi2_knot - -39) / 2.5),
+                1.3 * jax.nn.sigmoid((cls.phi2_knots - -39) / 2.5),
                 3.0,
             )
         )
