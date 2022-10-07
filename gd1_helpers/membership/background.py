@@ -8,6 +8,7 @@ from .base import Model
 from .helpers import (
     ln_normal,
     ln_simpson,
+    truncated_exp_decr_density_ln_prob,
     two_norm_mixture_ln_prob,
     two_truncnorm_mixture_ln_prob,
 )
@@ -31,9 +32,10 @@ class BackgroundModel(Model):
 
     phi2_cut = None
     pm1_cut = None
+    plx_max = None
 
     ln_n0_knots = jnp.linspace(-110, 30, 9)
-    # plx_knots = jnp.linspace(-110, 30, 9)
+    plx_knots = jnp.linspace(-110, 30, 9)
     pm1_knots = jnp.linspace(-110, 30, 7)
     pm2_knots = jnp.linspace(-110, 30, 7)
 
@@ -41,7 +43,7 @@ class BackgroundModel(Model):
 
     param_names = {
         "ln_n0": len(ln_n0_knots),
-        # "mean_plx": len(plx_knots),
+        "L_plx": len(plx_knots),
         "w_pm1": len(pm1_knots),
         "mean1_pm1": len(pm1_knots),
         "ln_std1_pm1": len(pm1_knots),
@@ -65,12 +67,19 @@ class BackgroundModel(Model):
     def phi2(cls, data, pars):
         return jnp.full(data["phi1"].shape, -jnp.log(cls.phi2_cut[1] - cls.phi2_cut[0]))
 
-    # @classmethod
-    # @partial(jax.jit, static_argnums=(0,))
-    # def plx(cls, data, mean_plx):
-    #     """ln_likelihood for parallax"""
-    #     mean_plx_spl = InterpolatedUnivariateSpline(cls.phi2_knots, mean_plx, k=3)
-    #     return ln_normal(data['parallax'], mean_plx_spl(phi1), data['parallax_error'])
+    @classmethod
+    @partial(jax.jit, static_argnums=(0,))
+    def plx(cls, data, L_plx):
+        L_spl = InterpolatedUnivariateSpline(cls.phi2_knots, L_plx, k=3)
+        plx_grid = jnp.linspace(1e-3, cls.plx_max, 2049)
+        ln_vals = truncated_exp_decr_density_ln_prob(
+            L_spl(data["phi1"]), plx_grid[None], cls.plx_max
+        ) + ln_normal(
+            cls.plx_grid[None],
+            data["parallax"][:, None],
+            data["parallax_error"][:, None] ** 2,
+        )
+        return ln_simpson(ln_vals, plx_grid)
 
     @classmethod
     @partial(jax.jit, static_argnums=(0,))
@@ -132,7 +141,7 @@ class BackgroundModel(Model):
             + cls.phi2(data, pars)
             + cls.pm1(data, pars)
             + cls.pm2(data, pars)
-            # + cls.plx(data, pars['mean_plx'])
+            + cls.plx(data, pars["L_plx"])
         )
 
         ln_dens_grid = cls.ln_n0(cls.integ_grid_phi1, pars)
@@ -146,7 +155,7 @@ class BackgroundModel(Model):
         lp = 0.0
 
         prior_stds = {
-            # "mean_plx": 1.,
+            "L_plx": 0.5,
             "mean1_pm1": 3.0,
             "ln_std1_pm1": 0.5,
             "mean2_pm1": 3.0,

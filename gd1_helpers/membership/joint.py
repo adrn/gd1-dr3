@@ -37,7 +37,7 @@ class JointModel(Model):
             pars[component_name] = tmp
 
         # HACK:
-        for name in ["mean_pm1", "ln_std_pm1", "mean_pm2", "ln_std_pm2"]:
+        for name in ["mean_pm1", "ln_std_pm1", "mean_pm2", "ln_std_pm2", "mean_plx"]:
             pars["spur"][name] = pars["stream"][name]
 
         return pars

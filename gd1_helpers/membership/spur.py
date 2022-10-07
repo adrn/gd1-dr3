@@ -14,6 +14,7 @@ class SpurModel(StreamModel):
 
     phi2_cut = None
     pm1_cut = None
+    plx_max = None
 
     integ_grid_phi1 = jnp.arange(-100, 20 + 1e-3, 0.1)
 

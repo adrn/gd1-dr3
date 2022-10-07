@@ -15,10 +15,11 @@ class StreamModel(Model):
 
     phi2_cut = None
     pm1_cut = None
+    plx_max = None
 
     ln_n0_knots = jnp.linspace(-110, 30, 35)
     phi2_knots = jnp.linspace(-110, 30, 17)
-    # plx_knots = jnp.linspace(-110, 30, 9)
+    plx_knots = jnp.linspace(-110, 30, 9)
     pm1_knots = jnp.linspace(-110, 30, 9)
     pm2_knots = jnp.linspace(-110, 30, 7)
 
@@ -28,7 +29,7 @@ class StreamModel(Model):
         "ln_n0": len(ln_n0_knots),
         "mean_phi2": len(phi2_knots),
         "ln_std_phi2": len(phi2_knots),
-        # "mean_plx": len(plx_knots),
+        "mean_plx": len(plx_knots),
         "mean_pm1": len(pm1_knots),
         "ln_std_pm1": len(pm1_knots),
         "mean_pm2": len(pm2_knots),
@@ -57,12 +58,17 @@ class StreamModel(Model):
             jnp.exp(2 * ln_std_phi2_spl(data["phi1"])),
         )
 
-    # @classmethod
-    # @partial(jax.jit, static_argnums=(0,))
-    # def plx(cls, data, mean_plx):
-    #     """ln_likelihood for parallax"""
-    #     mean_plx_spl = InterpolatedUnivariateSpline(cls.phi2_knots, mean_plx, k=3)
-    #     return ln_normal(data["parallax"], mean_plx_spl(phi1), data["parallax_error"])
+    @classmethod
+    @partial(jax.jit, static_argnums=(0,))
+    def plx(cls, data, mean_plx):
+        """ln_likelihood for parallax"""
+        mean_plx_spl = InterpolatedUnivariateSpline(cls.phi2_knots, mean_plx, k=3)
+        return ln_truncated_normal(
+            data["parallax"],
+            mean_plx_spl(data["phi1"]),
+            data["parallax_error"],
+            upper=cls.plx_max,
+        )
 
     @classmethod
     @partial(jax.jit, static_argnums=(0,))
@@ -104,7 +110,7 @@ class StreamModel(Model):
             + cls.phi2(data, pars)
             + cls.pm1(data, pars)
             + cls.pm2(data, pars)
-            # + cls.plx(data, pars["mean_plx"])
+            + cls.plx(data, pars["mean_plx"])
         )
         ln_dens_grid = cls.ln_n0(cls.integ_grid_phi1, pars)
         ln_V = ln_simpson(ln_dens_grid, x=cls.integ_grid_phi1)

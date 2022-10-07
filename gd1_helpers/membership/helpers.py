@@ -96,3 +96,22 @@ def two_truncnorm_mixture_ln_prob(p, data, data_err, lower, upper):
     ln_prob = jnp.logaddexp(ln_term1 + jnp.log(w), ln_term2 + jnp.log(1 - w))
 
     return ln_prob
+
+
+@jax.jit
+def exp_decr_density_ln_prob(L, plx):
+    return -(jnp.log(2) + 3 * jnp.log(L) + 4 * jnp.log(plx)) - (1 / (L * plx))
+
+
+@jax.jit
+def truncated_exp_decr_density_ln_prob(L, plx, plx_max):
+    ln_A = (
+        -1 / (L * plx_max)
+        + jnp.log(1 + 2 * L * plx_max(1 + L * plx_max))
+        - jnp.log(2)
+        - 2 * jnp.log(L)
+        - 2 * jnp.log(plx_max)
+    )
+    val = exp_decr_density_ln_prob(plx, L) - ln_A
+    val.at[(plx > plx_max) | (plx <= 0)].set(-jnp.inf)
+    return val
