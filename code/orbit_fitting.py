@@ -19,7 +19,6 @@ from pyia import GaiaData
 import arviz as az
 import emcee
 import scipy
-from sklearn.neighbors import KernelDensity
 from astropy.io import fits
 
 rnd = np.random.RandomState(seed=42)
@@ -28,12 +27,12 @@ class OrbitFit:
     
     def __init__(self):
         # basic code that will be optimized
-        self.df = ms.FardalStreamDF(random_state=np.random.RandomState(42))
+        self.df = ms.FardalStreamDF()
         self.phi1_prog = -13
 
         after = GaiaData('../data/member_prob_all.fits')
         self.model_output = after[(after.post_member_prob > 0.3) & 
-                             (-65 < after.phi1.flatten()) & (after.phi1.flatten() < -22) & #just the region of the spur
+                             (-60 < after.phi1.flatten()) & (after.phi1.flatten() < -20) & #just the region of the spur
                              (after.phi2.flatten() < 0.5)] # don't include the spur in the fit
         fn = '../data/sample_outputs/trace0.netcdf'
         d = az.from_netcdf(fn)
@@ -65,6 +64,9 @@ class OrbitFit:
                              [14.71, 14.75, 14.8, 15, 15.2, 15.4]])
         self.spline_dm_true = UnivariateSpline(sections, dm, k=5)
 
+        rv_bonaca_data = fits.open('../data/rv_catalog.fits')[1].data
+        gd1_rv_bonaca = rv_bonaca_data[rv_bonaca_data.pmmem & rv_bonaca_data.cmdmem & 
+                                       rv_bonaca_data.vrmem & rv_bonaca_data.fehmem]
         self.gd1_rv_bonaca = gd1_rv_bonaca[gd1_rv_bonaca.phi1.argsort()]
 
         self.spline_rv_bon = UnivariateSpline(self.gd1_rv_bonaca.phi1, self.gd1_rv_bonaca.Vrad, k=1, s = np.inf)
@@ -73,7 +75,7 @@ class OrbitFit:
     def lnprior(self, vals):
         lnp = 0
 
-        phi2_prog, pm1_prog, pm2_prog, rv_prog, dist_prog, halo_m, r_s = vals
+        phi2_prog, pm1_prog, pm2_prog, rv_prog, dist_prog, halo_m = vals
 
         dm_pm_model = self.spline_dm_true(self.phi1_prog)
         dist_pm_model = 10**((dm_pm_model + 5) / 5) / 1000
@@ -83,20 +85,14 @@ class OrbitFit:
         lnp += -((pm2_prog - self.spline_pm2_means(self.phi1_prog)) / self.spline_pm2_std(self.phi1_prog))**2. / 2.
         lnp += -((rv_prog - self.spline_rv_bon(self.phi1_prog)) / 10)**2. / 2.
         lnp += -((dist_prog - dist_pm_model) / 0.2)**2. / 2.
-        
-        lnp += -((halo_m - 5.4) / 1.5)**2. / 2.
-        lnp += -((r_s - 15.62) / 0.5)**2. / 2.
-        
 
         return lnp
 
 
     def loglik(self, vals):
-        phi2_prog, pm1_prog, pm2_prog, rv_prog, dist_prog, halo_mass, r_s = vals
+        phi2_prog, pm1_prog, pm2_prog, rv_prog, dist_prog, halo_mass = vals
         mhalo = halo_mass*10**11
-        print(f'{phi2_prog:f}',f'{pm1_prog:.3f}',f'{pm2_prog:.3f}',
-              f'{rv_prog:.1f}',f'{dist_prog:.3f}',
-              f'{halo_mass:.2f}', f'{r_s:.2f}')
+        print(f'{phi2_prog:f}',f'{pm1_prog:.3f}',f'{pm2_prog:.3f}',f'{rv_prog:.1f}',f'{dist_prog:.3f}',f'{halo_mass:.2f}')
 
         gd1_stream = gc.GD1Koposov10(phi1 = self.phi1_prog*u.degree, phi2 = phi2_prog*u.degree, distance=dist_prog*u.kpc,
                               pm_phi1_cosphi2=pm1_prog*u.mas/u.yr,
@@ -106,7 +102,7 @@ class OrbitFit:
         gd1_w0 = gd.PhaseSpacePosition(rep)
         gd1_mass = 5e3 * u.Msun
         gd1_pot = gp.PlummerPotential(m=gd1_mass, b=5*u.pc, units=galactic)
-        mw = gp.MilkyWayPotential(halo={'m': mhalo*u.Msun, 'r_s': r_s*u.kpc})
+        mw = gp.MilkyWayPotential(halo={'m': mhalo*u.Msun, 'r_s': 15.62*u.kpc})
         gen_gd1 = ms.MockStreamGenerator(self.df, mw, progenitor_potential=gd1_pot)
         gd1_stream, _ = gen_gd1.run(gd1_w0, gd1_mass,
                                         dt=-1 * u.Myr, n_steps=3000)
@@ -149,81 +145,23 @@ class OrbitFit:
         return ll
     # add phi2 with dispersion, get rvs from ana, debug by printing intermediately
 
-    
-    def loglik_kde(self, vals):
-        phi2_prog, pm1_prog, pm2_prog, rv_prog, dist_prog, halo_mass, r_s = vals
-        mhalo = halo_mass*10**11
-        print(f'{phi2_prog:f}',f'{pm1_prog:.3f}',f'{pm2_prog:.3f}',
-              f'{rv_prog:.1f}',f'{dist_prog:.3f}',
-              f'{halo_mass:.2f}', f'{r_s:.2f}')
-
-        gd1_stream = gc.GD1Koposov10(phi1 = self.phi1_prog*u.degree, phi2 = phi2_prog*u.degree, distance=dist_prog*u.kpc,
-                              pm_phi1_cosphi2=pm1_prog*u.mas/u.yr,
-                              pm_phi2=pm2_prog*u.mas/u.yr,
-                             radial_velocity = rv_prog*u.km/u.s)
-        rep = gd1_stream.transform_to(coord.Galactocentric).data
-        gd1_w0 = gd.PhaseSpacePosition(rep)
-        gd1_mass = 5e3 * u.Msun
-        gd1_pot = gp.PlummerPotential(m=gd1_mass, b=5*u.pc, units=galactic)
-        mw = gp.MilkyWayPotential(halo={'m': mhalo*u.Msun, 'r_s': r_s*u.kpc})
-        gen_gd1 = ms.MockStreamGenerator(self.df, mw, progenitor_potential=gd1_pot)
-        gd1_stream, _ = gen_gd1.run(gd1_w0, gd1_mass,
-                                        dt=-1 * u.Myr, n_steps=3000)
-        gd1 = gd1_stream.to_coord_frame(gc.GD1)
-        model_window = gd1[(gd1.phi1.value > -65) & (gd1.phi1.value < -22)]
-
-        
-         # evaluate the ll using KDE
-        kde_phi2 = KernelDensity(kernel='gaussian', 
-                                 bandwidth=0.11).fit(np.array([(model_window.phi1.value)/10, 
-                                                               model_window.phi2]).T)
-        loglike_phi2 = kde_phi2.score_samples(np.array([(self.model_output.phi1.flatten())/10, 
-                                                         self.model_output.phi2.flatten()]).T)
-        loglike_phi2 = np.sum(loglike_phi2)
-
-        kde_pm1 = KernelDensity(kernel='gaussian',
-                                bandwidth=0.21).fit(np.array([(model_window.phi1.value)/15,
-                                                              model_window.pm_phi1_cosphi2]).T)
-        loglike_pm1 = kde_pm1.score_samples(np.array([(self.model_output.phi1.flatten())/15, 
-                                                       self.model_output.pm1.flatten()]).T)
-        loglike_pm1 = np.sum(loglike_pm1)
-
-        kde_pm2 = KernelDensity(kernel='gaussian', 
-                                bandwidth=0.285).fit(np.array([(model_window.phi1.value)/15, 
-                                                              model_window.pm_phi2]).T)
-        loglike_pm2 = kde_pm2.score_samples(np.array([(self.model_output.phi1.flatten())/15, 
-                                                       self.model_output.pm2.flatten()]).T)
-        loglike_pm2 = np.sum(loglike_pm2)
-
-        kde_rv = KernelDensity(kernel='gaussian', 
-                               bandwidth=0.82).fit(np.array([model_window.phi1.value * 5, 
-                                                            model_window.radial_velocity]).T)
-        loglike_rv = kde_rv.score_samples(np.array([self.gd1_rv_bonaca.phi1 * 5,
-                                                    self.gd1_rv_bonaca.Vrad]).T)
-        loglike_rv = np.sum(loglike_rv)
-
-        ll = loglike_phi2 + loglike_pm1 + loglike_pm2 + loglike_rv
-        print(ll)
-        print('')
-
-        return ll
 
     def logprob(self, vals):
         lp = self.lnprior(vals)
         if not np.isfinite(lp):
             return -np.inf 
-        return lp + self.loglik_kde(vals)
+        return lp + self.loglik(vals)
 
     def min_logprob(self, vals):
         return -self.logprob(vals)
 
 if __name__ == '__main__':
-    OrbitFit = OrbitFit()
-    res = scipy.optimize.minimize(OrbitFit.min_logprob,x0=np.array([0, -10.6, -2.4, -187, 8.8, 5.3, 15.62]),
+    orbitfit = OrbitFit()
+    res = scipy.optimize.minimize(orbitfit.min_logprob,x0=np.array([0, -10, -2.3, -180, 8.8, 5.4]),
                                   method='Nelder-Mead',
                                   #method='L-BFGS-B',
                                   options={'disp':True})
-    print('From -65 to -22')
+    print('From -60 to -20')
     print(res)
 
 '''

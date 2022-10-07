@@ -1,6 +1,3 @@
-# Note: I learned about classes and how to use them after making this. I will eventaully update this script with classes since that will make it significantly cleaner but for now this is what I have
-
-
 # Third-party
 import astropy.coordinates as coord
 import astropy.table as at
@@ -35,8 +32,6 @@ from patsy import dmatrix
 
 
 #from an earlier version which had tighter constraints on CMD
-# these are fits to the proper motion and track that help have a smaller range of uniform priors along the stream
-## This is especially helpful for pm1, which varies significantly, and just having uniform priors 20 mas/yr wide was searching much too big of a space for these solutions and running into significant problems with the disk etc
 phi1_stream_pm_model = np.load('../data/phi1_stream_from_pm_model.npy')
 phi1_stream_pm_model = phi1_stream_pm_model.reshape(len(phi1_stream_pm_model), )
 stream_pm10 = np.load('../data/true_pm1_from_model.npy')
@@ -52,7 +47,6 @@ spline_phi2 = UnivariateSpline(phi1_stream_pm_model.reshape(est_track.shape)[::1
 
 
 def searchsorted(known_array, test_array): #known array is longer
-    # outputs indices of one array's values within a larger array
     index_sorted = np.argsort(known_array)
     known_array_sorted = known_array[index_sorted]
     known_array_middles = known_array_sorted[1:] - np.diff(known_array_sorted.astype('f'))/2
@@ -61,25 +55,10 @@ def searchsorted(known_array, test_array): #known array is longer
     return indices
 
 def pre_model(g_all, g, after):
-    '''
-    Parameters:
-    g_all: the full gaia dataset in this region, with no cuts
-    g: the gaia dataset in this region after applying a CMD cut to reduce the size of the data that the model is optimized with
-    after: an array of all the stars that includes their background probabilities which will go into the GMM
-    ---------------------------------------
-    Returns: 
-    g_sorted_all: g_all but sorted by phi1 (helps to match up data sets to have them all sorted like this)
-    obs_pm_all: the proper motions from the g_all dataset, sorted by their phi1 values
-    obs_pm_cov_all: the covariance matrices from the g_all dataset, sorted by their phi1 values
-    phi1_stream_all: the sorted phi1 values for the g_all dataset
-    phi2_stream_all: the phi2 values from the g_all dataset, sorted by phi1
-    bkg_ind: the indices of every star from the g dataset in the g_all dataset
-    '''
-    
+    #need to generate two sets for later
     g_sorted_all = g_all[g_all.phi1.argsort()]
 
     g_sorted_all = g_sorted_all[np.isfinite(g_sorted_all.parallax) & (g_sorted_all.parallax > 0)]
-    # need to transform this into the stream coordinate system
     dist = g_sorted_all.get_distance(min_parallax=1e-3*u.mas)
     c1 = g_sorted_all.get_skycoord(distance=dist)
     stream_coord = c1.transform_to(gc.GD1)
@@ -110,15 +89,11 @@ def pre_model(g_all, g, after):
 
 
 def pm_model_spline(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, bkg_ind, n_pm_nodes):
-    # used in the optimzation, creates the outputs for the full sample and the CMD cut sample in parallel
     with model:
-        
-        # using the indices that I have from the pre_model function, I generate the pms, pm covariance matrices, and the phi1 positions of all the stars that will be used in the generation of the optimized parameters (from the g dataset that has the CMD cuts)
         obs_pm = obs_pm_all[bkg_ind]
         obs_pm_cov = obs_pm_cov_all[bkg_ind]
         phi1_stream = phi1_stream_all[bkg_ind]
         
-        # find the knots/nodes of the proper motion distribution
         pm_knots = np.linspace(-101, 21, n_pm_nodes)
         B_pm_all = dmatrix(
             "bs(x, knots=knots, degree=3, include_intercept=True) - 1",
@@ -130,7 +105,6 @@ def pm_model_spline(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, bkg_ind,
             {"x": phi1_stream, "knots": pm_knots[1:-1]},)
         B_pm = np.asarray(B_pm)
         
-        # this uses the splines from the top of this script to create the uniform priors in pm for each node location
         est_pm1_nodes = spline_pm1(np.linspace(-101, 21, n_pm_nodes+2))
         est_pm2_nodes = spline_pm2(np.linspace(-101, 21, n_pm_nodes+2))
         lower_pm1_bounds = est_pm1_nodes - 3
@@ -141,14 +115,12 @@ def pm_model_spline(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, bkg_ind,
         upper_pm = np.vstack([upper_pm1_bounds, upper_pm2_bounds]).T
         est_pm_nodes = np.vstack([est_pm1_nodes, est_pm2_nodes]).T
         
-        # uniform priors on proper motion at each node
-        pm_nodes = pm.Uniform('pm_nodes', lower=lower_pm, upper=upper_pm, shape = (B_pm_all.shape[1], 2))
+        pm_nodes = pm.Uniform('pm_nodes', lower=lower_pm, upper=upper_pm, shape = (B_pm.shape[1], 2))
         
-        # generates the proper motion fit along the stream, at each point in the given dataset/sample
         mean_pm_stream_all = pm.Deterministic('mean_pm_stream_all', tt.dot(B_pm_all, pm_nodes))
         mean_pm_stream = pm.Deterministic('mean_pm_stream', tt.dot(B_pm, pm_nodes))
         
-        # standard deviation on the proper motion distribution in each direction, converted into a diagonal covariance matrix and then added to the observed covariance matrix in order to get the "full covariance matrix"
+        
         ln_std_pm_stream = pm.Uniform('ln_std_pm_stream', lower=[-4, -4], upper = [0,0], shape=2)
         std_pm_stream = tt.exp(ln_std_pm_stream)
         cov_pm_stream = tt.diag(std_pm_stream**2)
@@ -162,8 +134,6 @@ def pm_model_spline(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, bkg_ind,
         d, d_all = full_cov[:, 1, 1], full_cov_all[:, 1, 1]
         det, det_all = a * d - b * c, a_all*d_all - b_all*c_all
         
-        
-        # calculate the loglikelihood
         diff = obs_pm - mean_pm_stream
         diff_all = obs_pm_all - mean_pm_stream_all
         numer = (
@@ -184,7 +154,6 @@ def pm_model_spline(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, bkg_ind,
 
 
 def phi2_model_spline(model, phi1_stream_all, phi2_stream_all, bkg_ind, n_track_nodes, n_width_nodes):
-    # used in optimization, very similar to the above proper motion fit but with the track instead (also a width component
     with model:
         phi1_stream = phi1_stream_all[bkg_ind]
         phi2_stream = phi2_stream_all[bkg_ind]
@@ -213,7 +182,7 @@ def phi2_model_spline(model, phi1_stream_all, phi2_stream_all, bkg_ind, n_track_
         mean_phi2_stream = pm.Deterministic('mean_phi2_stream', tt.dot(B_track, track_nodes))
         mean_phi2_stream = mean_phi2_stream.reshape(phi2_stream.shape)
 
-        # add a component that gets the width of the stream as a function of phi1, this will be used as a standard deviation on the track when calculating the loglikelihood
+        # add a component that gets the width of the stream as a function of phi1
         width_knots = np.linspace(-101, 21, n_width_nodes)
         B_width_all = dmatrix(
             "bs(x, knots=knots, degree=3, include_intercept=True) - 1",
@@ -225,7 +194,7 @@ def phi2_model_spline(model, phi1_stream_all, phi2_stream_all, bkg_ind, n_track_
             {"x": phi1_stream, "knots": width_knots[1:-1]},)
         B_width = np.asarray(B_width)
         
-        width_nodes_init = 0.25+np.zeros(n_width_nodes+2) # initialize at 0.25 deg width
+        width_nodes_init = 0.25+np.zeros(n_width_nodes+2)
         
         width_nodes = pm.Uniform('width_nodes', lower=0.1, upper=1, 
                                    shape = B_width.shape[1], testval=width_nodes_init)
@@ -238,6 +207,7 @@ def phi2_model_spline(model, phi1_stream_all, phi2_stream_all, bkg_ind, n_track_
         var_phi2_stream = std_phi2_stream**2
         var_phi2_stream = var_phi2_stream.reshape(mean_phi2_stream.shape)
 
+        #NEW
         diff_phi2_all = phi2_stream_all - mean_phi2_stream_all
         loglike_fg_phi2_all = -0.5 * (tt.log(var_phi2_stream_all) + ((diff_phi2_all**2)/var_phi2_stream_all) + tt.log(2*np.pi))
         
@@ -247,13 +217,10 @@ def phi2_model_spline(model, phi1_stream_all, phi2_stream_all, bkg_ind, n_track_
     return loglike_fg_phi2, loglike_fg_phi2_all
 
 def spur_model(model, phi1_stream_all, phi2_stream_all, bkg_ind):
-    # used in optimization, cut the samples to only -43<phi1<-25 (where the spur is)
     phi1_stream = phi1_stream_all[bkg_ind]
     phi2_stream = phi2_stream_all[bkg_ind]
     
-    # I need to run this on the whole stream but I am only interested in -43<phi1<-25 so I create three different arrays
-    ## one to the left of the spur, where I set the loglikelihoods to -inf, one to the right where I do the same
-    ## and one in the middle which is going to be used in the rest of the function
+    # track for the spur as well:
     spur_sel_all = np.where((phi1_stream_all > -43) & (phi1_stream_all < -25))[0]
     phi1_spur_all, phi2_spur_all = phi1_stream_all[spur_sel_all], phi2_stream_all[spur_sel_all]
     left_all = phi1_stream_all[np.where((phi1_stream_all < -43) & (phi1_stream_all > -101))[0]]
@@ -269,41 +236,27 @@ def spur_model(model, phi1_stream_all, phi2_stream_all, bkg_ind):
     
     left = -np.inf*tt.exp(np.ones(left.shape))
     right = -np.inf*tt.exp(np.ones(right.shape))
-    ####################################################
     
-    # amplitude of the square root function (lower bound can't be too small otherwise it just optimizes by putting the spur along the stream)
     b4 = pm.Uniform('spur_track_scale', lower=0.2, upper=1)
     
-    # from here its is very similar to the track loglike calculations
     mean_spur_track_all = pm.Deterministic('mean_spur_track_all', b4*tt.sqrt(phi1_spur_all + 43))
     mean_spur_track = pm.Deterministic('mean_spur_track', b4*tt.sqrt(phi1_spur + 43))
     
-    # width of the spur
     std_phi2_spur = pm.Uniform('std_phi2_spur', lower=0, upper=1, testval = 0.15)
     var_phi2_spur = std_phi2_spur**2
     
     diff_spur_all = phi2_spur_all - mean_spur_track_all
     loglike_fg_spur_i_all = -0.5 * (tt.log(var_phi2_spur) + ((diff_spur_all**2)/var_phi2_spur) + tt.log(2*np.pi))
-    #recombine with the sections outside of the spur so that I have a loglikelihood for all datapoints, which I need in order to combine this with the overall stream track
     loglike_fg_spur_all = tt.concatenate([left_all, loglike_fg_spur_i_all, right_all])
     
     diff_spur = phi2_spur - mean_spur_track
     loglike_fg_spur_i = -0.5 * (tt.log(var_phi2_spur) + ((diff_spur**2)/var_phi2_spur) + tt.log(2*np.pi))
-    #recombine with the sections outside of the spur so that I have a loglikelihood for all datapoints, which I need in order to combine this with the overall stream track
     loglike_fg_spur = tt.concatenate([left, loglike_fg_spur_i, right])
     
     return loglike_fg_spur, loglike_fg_spur_all
 
-############################################
-## END OF FUNCTIONS USED FOR OPTIMIZATION ##
-############################################
-
-# the above functions are all the ones used in the optimization. Below are for the sampling, in which I output less things in order to help not make the ouput so large. Also there are a few functions from earlier versions of the code which are now obsolete but which I have kept because they were interesting at the time and provided the basis for the rest of the code
-
-
 
 def pm_model_spline_sample(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, bkg_ind, n_pm_nodes):
-    # used in sample, almost identical to optimzation except for the deterministic outputs
     with model:
         obs_pm = obs_pm_all[bkg_ind]
         obs_pm_cov = obs_pm_cov_all[bkg_ind]
@@ -355,7 +308,6 @@ def pm_model_spline_sample(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, b
     return loglike_fg
 
 def phi2_model_spline_sample(model, phi1_stream_all, phi2_stream_all, bkg_ind, n_track_nodes, n_width_nodes):
-    # used in sample, almost identical to optimzation except for the deterministic outputs
     with model:
         phi1_stream = phi1_stream_all[bkg_ind]
         phi2_stream = phi2_stream_all[bkg_ind]
@@ -400,7 +352,6 @@ def phi2_model_spline_sample(model, phi1_stream_all, phi2_stream_all, bkg_ind, n
     return loglike_fg_phi2
 
 def spur_model_sample(model, phi1_stream_all, phi2_stream_all, bkg_ind):
-    # used in sample, almost identical to optimzation except for the deterministic outputs
     phi1_stream = phi1_stream_all[bkg_ind]
     phi2_stream = phi2_stream_all[bkg_ind]
     
@@ -429,7 +380,6 @@ def spur_model_sample(model, phi1_stream_all, phi2_stream_all, bkg_ind):
     return loglike_fg_spur
 
 def short_pm_model_spur(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, bkg_ind):
-    # separate code that looks only at the spur region and only tries to model the spur (not the stream in that region)
     with model:
         obs_pm = obs_pm_all[bkg_ind]
         obs_pm_cov = obs_pm_cov_all[bkg_ind]
@@ -470,7 +420,6 @@ def short_pm_model_spur(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, bkg_
     return loglike_fg, loglike_fg_all
 
 def short_phi2_model_spur(model, phi1_stream_all, phi2_stream_all, bkg_ind):
-    # separate code that looks only at the spur region and only tries to model the spur (not the stream in that region)
     with model:
         phi1_stream = phi1_stream_all[bkg_ind]
         phi2_stream = phi2_stream_all[bkg_ind]
@@ -489,7 +438,6 @@ def short_phi2_model_spur(model, phi1_stream_all, phi2_stream_all, bkg_ind):
     return loglike_fg_phi2, loglike_fg_phi2_all
 
 def short_spur_model(model, phi1_stream_all, phi2_stream_all, obs_pm_all, obs_pm_cov_all, bkg_ind):
-    # combination of the above two codes I think? not sure what this is
     phi1_stream = phi1_stream_all[bkg_ind]
     phi2_stream = phi2_stream_all[bkg_ind]
     obs_pm = obs_pm_all[bkg_ind]
@@ -559,7 +507,6 @@ def short_spur_model(model, phi1_stream_all, phi2_stream_all, obs_pm_all, obs_pm
    
 
 def binned_pm_model(model, obs_pm, obs_pm_cov):
-    # from earlier version
     with model:
         mean_pm_stream = pm.Uniform('mean_pm_stream', lower=[-20, -10], upper=[0, 0], shape=2)
         ln_std_pm_stream = pm.Uniform('ln_std_pm_stream', -5, 0)
@@ -584,7 +531,6 @@ def binned_pm_model(model, obs_pm, obs_pm_cov):
     return loglike_fg
  
 def pm_model(model, obs_pm, obs_pm_cov, phi1_stream_all):
-    # from earlier version
     with pm.Model() as model:
         
         #take the data to be used in the model (after color cut) and separate it
@@ -639,7 +585,6 @@ def pm_model(model, obs_pm, obs_pm_cov, phi1_stream_all):
     return loglike_fg, loglike_fg_all
 
 def phi2_model(model, phi1_stream, phi2_stream):
-    # from earlier version
     with model:
         #NEW
         # phi2 track as a quadratic function of phi1
@@ -671,7 +616,6 @@ def phi2_model(model, phi1_stream, phi2_stream):
     
     
 def plot_pm_memb_prob(obs_pm, post_member_prob):
-    #plotting function
     fig, (ax1, ax2) = plt.subplots(1,2,figsize=(12, 5))
     colorbar_plot = ax1.scatter(obs_pm[:, 0], obs_pm[:, 1], c=post_member_prob, s=0.1, alpha=0.2, cmap='cool')
     plt.colorbar(colorbar_plot,ax=ax1)

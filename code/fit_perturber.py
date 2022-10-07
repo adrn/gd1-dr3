@@ -1,3 +1,5 @@
+import warnings
+warnings.filterwarnings("ignore")
 import numpy as np
 
 import gala.coordinates as gc
@@ -8,63 +10,31 @@ from gala.dynamics import mockstream as ms
 from gala.units import galactic
 #from gala.dynamics.nbody import DirectNBody
 from Nbody_gala import DirectNBody
+#from gravhopper import Simulation, IC
 
 import astropy.coordinates as coord
 import astropy.units as u
 from astropy.io import fits
 from pyia import GaiaData
-#from gravhopper import Simulation, IC
-import matplotlib.pyplot as plt
-from scipy.interpolate import UnivariateSpline, InterpolatedUnivariateSpline
+
 from sklearn.neighbors import KernelDensity
 
 class FitPert:
     
-    def __init__(self):
+    def __init__(self, data,data_short, mw, w0_now):
         
-        #########################
-        ## DATA FOR COMPARISON ##
-        #########################
-        after = GaiaData('../data/member_prob_all.fits')
-        model_output = after[after.post_member_prob > 0.25]
-        self.data = model_output[(model_output.phi1[:,0] > -65) & (model_output.phi1[:,0] < -22)]
-        
-        
-        ##########################################
-        ## CURRENT STREAM WITHOUT THE PERTURBER ##
-        ##########################################
-        df = ms.FardalStreamDF(random_state=np.random.RandomState(42))
-        #df = ms.FardalStreamDF()
-        
-        #gd1_init = gc.GD1Koposov10(phi1 = -13*u.degree, phi2=0*u.degree, distance=8.84*u.kpc,
-        #                          pm_phi1_cosphi2=-10.28*u.mas/u.yr,
-        #                          pm_phi2=-2.43*u.mas/u.yr,
-        #                          radial_velocity = -182*u.km/u.s)
-        gd1_init = gc.GD1Koposov10(phi1 = -13*u.degree, phi2=0*u.degree, distance=8.836*u.kpc,
-                                  pm_phi1_cosphi2=-10.575*u.mas/u.yr,
-                                  pm_phi2=-2.439*u.mas/u.yr,
-                                  radial_velocity = -189.6*u.km/u.s)
-        rep = gd1_init.transform_to(coord.Galactocentric).data
-        gd1_w0 = gd.PhaseSpacePosition(rep)
-        gd1_mass = 5e3 * u.Msun
-        gd1_pot = gp.PlummerPotential(m=gd1_mass, b=5*u.pc, units=galactic)
-        self.mw = gp.MilkyWayPotential(halo={'m': 5.43e11*u.Msun, 'r_s': 15.78*u.kpc})
-        gen_gd1 = ms.MockStreamGenerator(df, self.mw, progenitor_potential=gd1_pot)
-        gd1_stream, gd1_nbody = gen_gd1.run(gd1_w0, gd1_mass,
-                                        dt=-1 * u.Myr, n_steps=3000)
-        gd1 = gd1_stream.to_coord_frame(gc.GD1)
-
-        gd1_short = gd1_stream[(-65<gd1.phi1.value) & (gd1.phi1.value<-22)]
-        self.w0_now = gd.PhaseSpacePosition(gd1_short.data, gd1_short.vel)
+        self.data = data
+        self.data_short = data_short
+        self.mw = mw
+        self.w0_now = w0_now
         
         rv_bonaca_data = fits.open('../data/rv_catalog.fits')[1].data
         self.gd1_rv_bonaca = rv_bonaca_data[rv_bonaca_data.pmmem & rv_bonaca_data.cmdmem & rv_bonaca_data.vrmem & rv_bonaca_data.fehmem]
+        self.gd1_rv_bonaca_short = self.gd1_rv_bonaca[(self.gd1_rv_bonaca.phi1 > -43) & (self.gd1_rv_bonaca.phi1 < -25)]
         
-    
-
     def pre_fitting(self, vals):
-
-        self.b, self.psi, self.z, self.v_z, self.vpsi, self.t_int, self.logm = vals
+        
+        self.b, self.psi, self.z, self.v_z, self.vpsi, self.t_int, self.logm, self.logcore = vals
         
         self.core = 1.05 * (10**self.logm / (10**8))**0.5
         
@@ -99,12 +69,11 @@ class FitPert:
         self.orig_stream = orbit_stream[-1]
         self.w0_orig_stream = gd.PhaseSpacePosition(pos=self.orig_stream.pos, 
                                                     vel=self.orig_stream.vel)
-
-        self.perturber_pot = gp.HernquistPotential(m=10**self.logm*u.Msun, c=self.core*u.pc, units=galactic)
-        #self.perturber_pot = gp.KeplerPotential(m=10**self.logm*u.Msun, units=galactic)
-        #self.perturber_pot = gp.NFWPotential(m=10**self.logm*u.Msun, r_s=self.core*45*u.pc, units=galactic)
         
-        return self.site_at_impact_w0, np.sqrt(vxstream**2 + vystream**2 + vzstream**2)
+        self.perturber_pot = gp.HernquistPotential(m=10**self.logm*u.Msun, c=(10**self.logcore)*u.pc, units=galactic)
+        #perturber_pot = gp.KeplerPotential(m=10**logm*u.Msun, units=galactic)
+        
+        return self.site_at_impact_w0
 
 
     def get_cyl_rotation(self): #borrowed from Adrian Price-Whelan's streampunch github repo
@@ -156,11 +125,12 @@ class FitPert:
         ## PERTURBER PROPERTIES AT TIME OF INTERACTION ##
         #################################################
         w0_pert = self.get_perturber_w0_at_impact()
+        
+        ## CHECK THAT THE PERTURBER IS BOUND TO THE MILKY WAY
         pert_energy = gp.hamiltonian.Hamiltonian(self.mw).energy(w0_pert)
-        print(pert_energy.value[0])
-
         if pert_energy.value[0] > 0:
-            return False, False
+            self.current = False
+            self.orbits = False
         else:
             #############################################
             ## PERTURBER PROPERTIES BEFORE INTERACTION ##
@@ -189,15 +159,16 @@ class FitPert:
 
             # what should be compared to present time
             self.current = self.orbits[-1, 1:].to_coord_frame(gc.GD1)
-            return self.current, self.orbits
-        
-    def loglik_model_kde(self, params):
-        
+
+        return self.current, self.orbits
+
+    def loglik(self, params):
         self.pre_fitting(params)
         current, orbits = self.nbody()
+                
         if not current:
-            return np.nan, np.nan, np.nan, np.nan, np.nan
-        
+            ll_model, ll_model_short, ll_phi2_short, ll_data, model_dens_ratio = np.nan, np.nan, np.nan, np.nan, np.nan
+            pert_apo, pert_peri = np.nan, np.nan
         else:
             #############################
             ## EVALUATE LOG-LIKELIHOOD ##
@@ -207,67 +178,101 @@ class FitPert:
             model_window = self.current[(self.current.phi1.value > -65) & (self.current.phi1.value < -22)]
 
             # evaluate the ll using KDE
-            kde_phi2 = KernelDensity(kernel='gaussian', 
-                                     bandwidth=0.11).fit(np.array([(model_window.phi1.value)/10, 
+            kde_phi2_model = KernelDensity(kernel='gaussian', 
+                                     bandwidth=0.11).fit(np.array([(model_window.phi1.value + 42)/10, 
                                                                    model_window.phi2]).T)
-            loglike_phi2 = kde_phi2.score_samples(np.array([(self.data.phi1.flatten())/10, 
+            loglike_phi2_model = kde_phi2_model.score_samples(np.array([(self.data.phi1.flatten()+42)/10, 
                                                              self.data.phi2.flatten()]).T)
-            loglike_phi2 = np.sum(loglike_phi2)
+            loglike_phi2_model = np.sum(loglike_phi2_model)
 
             kde_pm1 = KernelDensity(kernel='gaussian',
-                                    bandwidth=0.21).fit(np.array([(model_window.phi1.value)/15,
+                                    bandwidth=0.21).fit(np.array([(model_window.phi1.value +42)/15,
                                                                   model_window.pm_phi1_cosphi2]).T)
-            loglike_pm1 = kde_pm1.score_samples(np.array([(self.data.phi1.flatten())/15, 
+            loglike_pm1 = kde_pm1.score_samples(np.array([(self.data.phi1.flatten()+42)/15, 
                                                            self.data.pm1.flatten()]).T)
             loglike_pm1 = np.sum(loglike_pm1)
 
             kde_pm2 = KernelDensity(kernel='gaussian', 
-                                    bandwidth=0.285).fit(np.array([(model_window.phi1.value)/15, 
+                                    bandwidth=0.285).fit(np.array([(model_window.phi1.value+42)/15, 
                                                                   model_window.pm_phi2]).T)
-            loglike_pm2 = kde_pm2.score_samples(np.array([(self.data.phi1.flatten())/15, 
+            loglike_pm2 = kde_pm2.score_samples(np.array([(self.data.phi1.flatten()+42)/15, 
                                                            self.data.pm2.flatten()]).T)
             loglike_pm2 = np.sum(loglike_pm2)
 
             kde_rv = KernelDensity(kernel='gaussian', 
-                                   bandwidth=0.82).fit(np.array([model_window.phi1.value * 5, 
+                                   bandwidth=0.82).fit(np.array([model_window.phi1.value*5, 
                                                                 model_window.radial_velocity]).T)
-            loglike_rv = kde_rv.score_samples(np.array([self.gd1_rv_bonaca.phi1 * 5,
+            loglike_rv = kde_rv.score_samples(np.array([self.gd1_rv_bonaca.phi1*5,
                                                         self.gd1_rv_bonaca.Vrad]).T)
             loglike_rv = np.sum(loglike_rv)
 
-            ll = loglike_phi2 + loglike_pm1 + loglike_pm2 + loglike_rv
+            ll = loglike_phi2_model + loglike_pm1 + loglike_pm2 + loglike_rv
+            
+            ###############################################
+            ## EVALUATE LOG-LIKELIHOOD IN SMALLER REGION ##
+            ###############################################
 
-             #########################
+            #cut output of model to window
+            model_window_short = self.current[(self.current.phi1.value > -43) & (self.current.phi1.value < -25)]
+
+            # evaluate the ll using KDE
+            kde_phi2_short = KernelDensity(kernel='gaussian', 
+                                     bandwidth=0.11).fit(np.array([(model_window_short.phi1.value)/10, 
+                                                                   model_window_short.phi2]).T)
+            loglike_phi2_short = kde_phi2_short.score_samples(np.array([(self.data_short.phi1.flatten())/10, 
+                                                             self.data_short.phi2.flatten()]).T)
+            loglike_phi2_short = np.sum(loglike_phi2_short)
+
+            kde_pm1_short = KernelDensity(kernel='gaussian',
+                                    bandwidth=0.21).fit(np.array([(model_window_short.phi1.value)/15,
+                                                                  model_window_short.pm_phi1_cosphi2]).T)
+            loglike_pm1_short = kde_pm1_short.score_samples(np.array([(self.data_short.phi1.flatten())/15, 
+                                                           self.data_short.pm1.flatten()]).T)
+            loglike_pm1_short = np.sum(loglike_pm1_short)
+
+            kde_pm2_short = KernelDensity(kernel='gaussian', 
+                                    bandwidth=0.285).fit(np.array([(model_window_short.phi1.value)/15, 
+                                                                  model_window_short.pm_phi2]).T)
+            loglike_pm2_short = kde_pm2_short.score_samples(np.array([(self.data_short.phi1.flatten())/15, 
+                                                           self.data_short.pm2.flatten()]).T)
+            loglike_pm2_short = np.sum(loglike_pm2_short)
+
+            kde_rv_short = KernelDensity(kernel='gaussian', 
+                                   bandwidth=0.82).fit(np.array([model_window_short.phi1.value * 5, 
+                                                                model_window_short.radial_velocity]).T)
+            loglike_rv_short = kde_rv_short.score_samples(np.array([self.gd1_rv_bonaca_short.phi1 * 5,
+                                                        self.gd1_rv_bonaca_short.Vrad]).T)
+            loglike_rv_short = np.sum(loglike_rv_short)
+
+            ll_short = loglike_phi2_short + loglike_pm1_short + loglike_pm2_short + loglike_rv_short
+            ll_phi2_short = loglike_phi2_short
+
+            #########################
             ## TESTING FOR THE GAP ##
             #########################
-            no_spur_model = model_window[(model_window.phi2.value < 0.6)]
-
+            #no_spur_model = model_window[(model_window.phi2.value < 0.6)]
+            no_spur_model = model_window
             #take the average count in the range -45 to -55, which seems to be heavily populated and consistent
             high_dens_model = no_spur_model[(no_spur_model.phi1.value < -45) & (no_spur_model.phi1.value > -54)]
 
             low_dens_model = no_spur_model[(no_spur_model.phi1.value < -39) & (no_spur_model.phi1.value > -43)]
-            model_dens_ratio = (len(low_dens_model)/4) / (len(high_dens_model)/9)
+            gap_ratio = (len(low_dens_model)/4) / (len(high_dens_model)/9 + 0.01)
 
-
-
-            return ll, kde_phi2, kde_pm1, kde_pm2, kde_rv
-    
-    def loglik_data_kde(self, params):
-        self.prefitting(params)
-        self.nbody()
+            ## Calculate the apocenter and pericenter
+            orbit_pert = self.mw.integrate_orbit(orbits[-1,0], dt=-1*u.Myr, n_steps=12000)
+            pert_apo, pert_peri = orbit_pert.apocenter().value, orbit_pert.pericenter().value
+            
+            # Doing KDE on the data
+            #############################
+            ## EVALUATE LOG-LIKELIHOOD ##
+            #############################
+            kde_phi2_data = KernelDensity(kernel='gaussian', bandwidth=0.15).fit(
+                                np.array([(self.data.phi1.flatten() + 42)/10, self.data.phi2.flatten()]).T)
+            loglike_phi2_data = kde_phi2_data.score_samples(np.array([(model_window.phi1.value+42)/10, 
+                                                             model_window.phi2.value]).T)
+            loglike_phi2_data = np.sum(loglike_phi2_data)
+            ll_data = loglike_phi2_data
         
-        #############################
-        ## EVALUATE LOG-LIKELIHOOD ##
-        #############################
-
-        #cut output of model to window
-        model_window = self.current[(self.current.phi1.value > -65) & (self.current.phi1.value < -22)]
-        kde_phi2_data = KernelDensity(kernel='gaussian', bandwidth=0.1).fit(
-                            np.array([(data.phi1.flatten() + 46)/10, data.phi2.flatten()]).T)
-        loglike_phi2 = kde_phi2_data.score_samples(np.array([(model_window.phi1.value+46)/10, 
-                                                         model_window.phi2.value]).T)
-        loglike_phi2 = np.sum(loglike_phi2)
-        ll = loglike_phi2
-        return ll, kde_phi2_data, model_window
+        return ll, ll_short, ll_phi2_short, ll_data, gap_ratio, pert_apo, pert_peri
         
-#if __name__ == '__main__':
+        
