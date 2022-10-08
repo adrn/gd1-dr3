@@ -1,3 +1,4 @@
+from copy import deepcopy
 from functools import partial
 
 import jax
@@ -98,9 +99,9 @@ class RVBackgroundModel(Model):
     param_bounds = {
         "ln_n0": (-10, 3),
         "w_rv": (0, 1),
-        "mean_rv1": (-300, 300),
+        "mean_rv1": (-500, 500),
         "ln_std_rv1": (-5, 5),
-        "mean_rv2": (-300, 300),
+        "mean_rv2": (-500, 500),
         "ln_std_rv2": (-5, 8),
     }
     integ_grid_phi1 = jnp.arange(-100, 20 + 1e-3, 0.2)
@@ -236,7 +237,7 @@ class RVJointModel(Model):
     @classmethod
     @partial(jax.jit, static_argnums=(0,))
     def preprocess_data(cls, rv_offsets, data):
-        new_data = data.copy()
+        new_data = deepcopy(data)
         new_data["rv"] = jnp.select(
             [data["survey_id"] == i for i in range(len(rv_offsets))],
             [data["rv"] + rv_offset for rv_offset in rv_offsets],
