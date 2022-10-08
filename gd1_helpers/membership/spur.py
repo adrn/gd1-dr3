@@ -12,9 +12,6 @@ __all__ = ["SpurModel"]
 class SpurModel(StreamModel):
     name = "spur"
 
-    phi2_cut = None
-    pm1_cut = None
-
     integ_grid_phi1 = jnp.arange(-100, 20 + 1e-3, 0.1)
 
     knot_lim = (-110, 30)

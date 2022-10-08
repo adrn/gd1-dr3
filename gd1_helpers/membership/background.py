@@ -30,9 +30,6 @@ class BackgroundModel(Model):
     """
     name = "background"
 
-    phi2_cut = None
-    pm1_cut = None
-
     ln_n0_knots = jnp.linspace(-110, 30, 9)
     # plx_knots = jnp.linspace(-110, 30, 9)
     pm1_knots = jnp.linspace(-110, 30, 7)
