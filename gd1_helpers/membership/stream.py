@@ -5,16 +5,13 @@ import jax.numpy as jnp
 from jax_cosmo.scipy.interpolate import InterpolatedUnivariateSpline
 
 from .base import Model
-from .helpers import ln_normal, ln_simpson, ln_truncated_normal
+from .helpers import ln_normal, ln_simpson, ln_truncated_normal, ln_uniform
 
 __all__ = ["StreamModel"]
 
 
 class StreamModel(Model):
     name = "stream"
-
-    phi2_cut = None
-    pm1_cut = None
 
     ln_n0_knots = jnp.linspace(-110, 30, 35)
     phi2_knots = jnp.linspace(-110, 30, 17)
@@ -33,6 +30,16 @@ class StreamModel(Model):
         "ln_std_pm1": len(pm1_knots),
         "mean_pm2": len(pm2_knots),
         "ln_std_pm2": len(pm2_knots),
+    }
+
+    param_bounds = {
+        "ln_n0": (-8, 8),
+        "mean_phi2": Model.phi2_cut,
+        "ln_std_phi2": (-5, 0),
+        "mean_pm1": Model.pm1_cut,
+        "ln_std_pm1": (-5, -1),
+        "mean_pm2": (-5, 5),
+        "ln_std_pm2": (-5, -1),
     }
 
     @classmethod
@@ -119,7 +126,7 @@ class StreamModel(Model):
         prior_stds = {
             "mean_phi2": 1.0,
             "ln_std_phi2": 1.0,
-            "mean_plx": 1.0,
+            # "mean_plx": 1.0,
             "mean_pm1": 3.0,
             "ln_std_pm1": 0.5,
             "mean_pm2": 3.0,
@@ -131,5 +138,14 @@ class StreamModel(Model):
 
             for i in range(1, size):
                 lp += ln_normal(pars[name][i], pars[name][i - 1], prior_stds[name])
+
+        lp += ln_truncated_normal(
+            pars["mean_phi2"], 0, 5.0, *cls.param_bounds["mean_phi2"]
+        ).sum()
+        lp += ln_truncated_normal(
+            pars["ln_std_phi2"], -0.5, 3.0, *cls.param_bounds["ln_std_phi2"]
+        ).sum()
+        for name in ["mean_pm1", "ln_std_pm1", "mean_pm2", "ln_std_pm2"]:
+            lp += ln_uniform(pars[name], *cls.param_bounds[name]).sum()
 
         return lp

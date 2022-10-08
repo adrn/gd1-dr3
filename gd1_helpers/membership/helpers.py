@@ -4,7 +4,15 @@ import jax.scipy as jsci
 
 from .truncnorm import logpdf as truncnorm_logpdf
 
-__all__ = ["ln_normal", "ln_truncated_normal", "ln_simpson"]
+__all__ = ["ln_uniform", "ln_normal", "ln_truncated_normal", "ln_simpson"]
+
+
+@jax.jit
+def ln_uniform(x, lower, upper):
+    """Evaluate the log-uniform probability"""
+    vals = jnp.full_like(x, -jnp.log(upper - lower))
+    vals = jnp.where((x > upper) | (x < lower), -jnp.inf, vals)
+    return vals
 
 
 @jax.jit

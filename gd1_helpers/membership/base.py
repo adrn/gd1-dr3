@@ -12,6 +12,9 @@ class Model:
     # TODO: could implement __init_subclass__() to enforce that subclasses have the
     # necessary ln_likelihood(), ln_prior(), ...
 
+    phi2_cut = (-7, 5.0)
+    pm1_cut = (-100, -1.0)
+
     @classmethod
     @partial(jax.jit, static_argnums=(0,))
     def unpack_pars(cls, p_arr):

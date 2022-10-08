@@ -8,6 +8,7 @@ from .base import Model
 from .helpers import (
     ln_normal,
     ln_simpson,
+    ln_uniform,
     two_norm_mixture_ln_prob,
     two_truncnorm_mixture_ln_prob,
 )
@@ -52,6 +53,20 @@ class BackgroundModel(Model):
         "ln_std1_pm2": len(pm2_knots),
         "mean2_pm2": len(pm2_knots),
         "ln_std2_pm2": len(pm2_knots),
+    }
+
+    param_bounds = {
+        "ln_n0": (-2, 8),
+        "w_pm1": (0, 1),
+        "mean1_pm1": (-5, 20),
+        "ln_std1_pm1": (-5, 5),
+        "mean2_pm1": (-5, 20),
+        "ln_std2_pm1": (-5, 5),
+        "w_pm2": (0, 1),
+        "mean1_pm2": (-10, 10),
+        "ln_std1_pm2": (-5, 5),
+        "mean2_pm2": (-10, 10),
+        "ln_std2_pm2": (-5, 5),
     }
 
     @classmethod
@@ -162,5 +177,20 @@ class BackgroundModel(Model):
 
             for i in range(1, size):
                 lp += ln_normal(pars[name][i], pars[name][i - 1], prior_stds[name])
+
+        for name in [
+            "ln_n0",
+            "w_pm1",
+            "mean1_pm1",
+            "ln_std1_pm1",
+            "mean2_pm1",
+            "ln_std2_pm1",
+            "w_pm2",
+            "mean1_pm2",
+            "ln_std1_pm2",
+            "mean2_pm2",
+            "ln_std2_pm2",
+        ]:
+            lp += ln_uniform(pars[name], *cls.param_bounds[name]).sum()
 
         return lp

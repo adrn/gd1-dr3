@@ -3,7 +3,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
-from .helpers import ln_normal
+from .helpers import ln_normal, ln_uniform
 from .stream import StreamModel
 
 __all__ = ["SpurModel"]
@@ -33,6 +33,12 @@ class SpurModel(StreamModel):
         # "ln_std_pm1": len(pm1_knots),
         # "mean_pm2": len(pm2_knots),
         # "ln_std_pm2": len(pm2_knots),
+    }
+
+    param_bounds = {
+        "ln_n0": (-8, 8),
+        "mean_phi2": (-8, 2),
+        "ln_std_phi2": (-5, 0),
     }
 
     @classmethod
@@ -68,5 +74,8 @@ class SpurModel(StreamModel):
             jax.nn.log_sigmoid((pars["ln_n0"] - -45) / 0.5)
             + jax.nn.log_sigmoid((-pars["ln_n0"] - 20) / 1.0)
         )
+
+        for name in ["ln_std_phi2", "mean_pm1", "ln_std_pm1", "mean_pm2", "ln_std_pm2"]:
+            lp += ln_uniform(pars[name], *cls.param_bounds[name]).sum()
 
         return lp
