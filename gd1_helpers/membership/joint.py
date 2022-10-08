@@ -38,7 +38,8 @@ class JointModel(Model):
 
         # HACK:
         for name in ["mean_pm1", "ln_std_pm1", "mean_pm2", "ln_std_pm2"]:
-            pars["spur"][name] = pars["stream"][name]
+            if "stream" in pars and name in pars["stream"]:
+                pars["spur"][name] = pars["stream"][name]
 
         return pars
 
