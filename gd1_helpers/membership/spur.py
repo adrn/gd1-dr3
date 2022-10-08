@@ -32,11 +32,10 @@ class SpurModel(StreamModel):
         # "ln_std_pm2": len(pm2_knots),
     }
 
-    param_bounds = {
-        "ln_n0": (-8, 8),
-        "mean_phi2": (-8, 2),
-        "ln_std_phi2": (-5, 0),
-    }
+    param_bounds = StreamModel.param_bounds.copy()
+    param_bounds["ln_n0"] = (-8, 8)
+    param_bounds["mean_phi2"] = (-8, 2)
+    param_bounds["ln_std_phi2"] = (-5, 0)
 
     @classmethod
     @partial(jax.jit, static_argnums=(0,))
