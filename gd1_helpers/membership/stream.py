@@ -13,8 +13,12 @@ __all__ = ["StreamModel"]
 class StreamModel(Model):
     name = "stream"
 
-    ln_n0_knots = jnp.linspace(-110, 30, 35)
-    phi2_knots = jnp.linspace(-110, 30, 17)
+    ln_n0_knots = jnp.arange(
+        -100 - 2 * 3.0, 20 + 2 * 3.0 + 1e-3, 3.0  # arange w/ 3º step
+    )
+    phi2_knots = jnp.arange(
+        -100 - 2 * 5.0, 20 + 2 * 5.0 + 1e-3, 5.0  # arange w/ 5º step
+    )
     # plx_knots = jnp.linspace(-110, 30, 9)
     pm1_knots = jnp.linspace(-110, 30, 9)
     pm2_knots = jnp.linspace(-110, 30, 7)
@@ -139,9 +143,9 @@ class StreamModel(Model):
             for i in range(1, size):
                 lp += ln_normal(pars[name][i], pars[name][i - 1], prior_stds[name])
 
-        lp += ln_truncated_normal(
-            pars["mean_phi2"], 0, 5.0, *cls.param_bounds["mean_phi2"]
-        ).sum()
+        # lp += ln_truncated_normal(
+        #     pars["mean_phi2"], 0, 5.0, *cls.param_bounds["mean_phi2"]
+        # ).sum()
         lp += ln_truncated_normal(
             pars["ln_std_phi2"], -0.5, 3.0, *cls.param_bounds["ln_std_phi2"]
         ).sum()
