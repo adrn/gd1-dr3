@@ -42,13 +42,13 @@ class BackgroundModel(Model):
         # "mean_plx": len(plx_knots),
         "w_pm1": len(pm1_knots),
         "mean1_pm1": len(pm1_knots),
-        "ln_std1_pm1": len(pm1_knots),
         "mean2_pm1": len(pm1_knots),
+        "ln_std1_pm1": len(pm1_knots),
         "ln_std2_pm1": len(pm1_knots),
         "w_pm2": len(pm2_knots),
         "mean1_pm2": len(pm2_knots),
-        "ln_std1_pm2": len(pm2_knots),
         "mean2_pm2": len(pm2_knots),
+        "ln_std1_pm2": len(pm2_knots),
         "ln_std2_pm2": len(pm2_knots),
     }
 
@@ -56,13 +56,13 @@ class BackgroundModel(Model):
         "ln_n0": (-2, 8),
         "w_pm1": (0, 1),
         "mean1_pm1": (-5, 20),
-        "ln_std1_pm1": (-5, 5),
         "mean2_pm1": (-5, 20),
+        "ln_std1_pm1": (-5, 5),
         "ln_std2_pm1": (-5, 5),
         "w_pm2": (0, 1),
         "mean1_pm2": (-10, 10),
-        "ln_std1_pm2": (-5, 5),
         "mean2_pm2": (-10, 10),
+        "ln_std1_pm2": (-5, 5),
         "ln_std2_pm2": (-5, 5),
     }
 
@@ -102,8 +102,8 @@ class BackgroundModel(Model):
             (
                 w_spl(data["phi1"]),
                 mean1_spl(data["phi1"]),
-                ln_std1_spl(data["phi1"]),
                 mean2_spl(data["phi1"]),
+                ln_std1_spl(data["phi1"]),
                 ln_std2_spl(data["phi1"]),
             )
         )
@@ -129,8 +129,8 @@ class BackgroundModel(Model):
             (
                 w_spl(data["phi1"]),
                 mean1_spl(data["phi1"]),
-                ln_std1_spl(data["phi1"]),
                 mean2_spl(data["phi1"]),
+                ln_std1_spl(data["phi1"]),
                 ln_std2_spl(data["phi1"]),
             )
         )

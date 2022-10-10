@@ -79,7 +79,7 @@ def plot_model_projections(
 
     _err = 0.1  # HACK:
     for i, name in enumerate(["phi2", "pm1", "pm2"]):
-        grid1, grid2 = np.meshgrid(grids["phi1"], grids["pm1"])
+        grid1, grid2 = np.meshgrid(grids["phi1"], grids[name])
 
         ln_dens = []
         for component_name in components:
