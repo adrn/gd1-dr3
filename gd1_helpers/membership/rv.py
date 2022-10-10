@@ -92,16 +92,16 @@ class RVBackgroundModel(Model):
         "ln_n0": len(ln_n0_knots),
         "w_rv": len(rv_knots),
         "mean_rv1": len(rv_knots),
-        "ln_std_rv1": len(rv_knots),
         "mean_rv2": len(rv_knots),
+        "ln_std_rv1": len(rv_knots),
         "ln_std_rv2": len(rv_knots),
     }
     param_bounds = {
         "ln_n0": (-10, 3),
         "w_rv": (0, 1),
         "mean_rv1": (-500, 500),
-        "ln_std_rv1": (-5, 5),
         "mean_rv2": (-500, 500),
+        "ln_std_rv1": (-5, 5),
         "ln_std_rv2": (-5, 8),
     }
     integ_grid_phi1 = jnp.arange(-100, 20 + 1e-3, 0.2)
@@ -130,8 +130,8 @@ class RVBackgroundModel(Model):
             (
                 w_spl(data["phi1"]),
                 mean1_spl(data["phi1"]),
-                ln_std1_spl(data["phi1"]),
                 mean2_spl(data["phi1"]),
+                ln_std1_spl(data["phi1"]),
                 ln_std2_spl(data["phi1"]),
             )
         )
