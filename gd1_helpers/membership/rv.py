@@ -1,19 +1,11 @@
-from copy import deepcopy
 from functools import partial
 
 import jax
 import jax.numpy as jnp
-from jax.scipy.special import logsumexp
 from jax_cosmo.scipy.interpolate import InterpolatedUnivariateSpline
 
 from gd1_helpers.membership import JointModel, Model
-from gd1_helpers.membership.helpers import (
-    ln_normal,
-    ln_simpson,
-    ln_truncated_normal,
-    ln_uniform,
-    two_norm_mixture_ln_prob,
-)
+from gd1_helpers.membership.helpers import ln_normal, two_norm_mixture_ln_prob
 
 
 class RVStreamModel(Model):
@@ -26,7 +18,7 @@ class RVStreamModel(Model):
     }
     param_bounds = {
         "mean": (-800, 800),
-        "ln_std": (-5, 2),
+        "ln_std": (-5, 1),
     }
 
     @classmethod
@@ -79,8 +71,8 @@ class RVBackgroundModel(Model):
     }
     param_bounds = {
         "arctanh_w": (-100, 100),
-        "mean1": (-500, 500),
-        "mean2": (-500, 500),
+        "mean1": (-250, -130),
+        "mean2": (-100, 100),
         "ln_std1": (-5, 5),
         "ln_std2": (-5, 8),
     }
@@ -144,18 +136,49 @@ class RVMixtureModel(JointModel):
     }
 
     w_mix_knots = jnp.arange(-110, 30 + 1e-3, 30)
-    param_names = {"arctanh_w_mix": len(w_mix_knots)}
-    param_bounds = {"arctanh_w_mix": (-100, 100)}
+    N_survey = None  # TODO: must be set in notebook
+    param_names = {
+        "arctanh_w_mix": len(w_mix_knots),
+        "rv0": None,  # TODO: must be set in notebook - survey offsets
+        "ln_extra_err": None,  # TODO: must be set in notebook - error inflation
+    }
+    param_bounds = {
+        "arctanh_w_mix": (-100, 100),
+        "rv0": (-100, 100),
+        "ln_extra_err": (-5, 4.5),
+    }
     for component_name, ModelComponent in components.items():
         for k, v in ModelComponent.param_names.items():
             param_names[k + f"_{ModelComponent.name}"] = v
 
-    print(f"model has {sum(param_names.values())} parameters")
+    # print(f"model has {sum(param_names.values())} parameters")
+
+    @classmethod
+    @partial(jax.jit, static_argnums=(0,))
+    def preprocess_data(cls, flat_pars, data):
+        new_data = {}
+        new_data["phi1"] = data["phi1"]
+
+        condns = [data["survey_id"] == i for i in range(cls.N_survey)]
+        new_data["rv"] = jnp.select(
+            condns, [data["rv"] - flat_pars["rv0"][i] for i in range(cls.N_survey)]
+        )
+        new_data["rv_error"] = jnp.select(
+            condns,
+            [
+                jnp.sqrt(
+                    data["rv_error"] ** 2 + jnp.exp(2 * flat_pars["ln_extra_err"][i])
+                )
+                for i in range(cls.N_survey)
+            ],
+        )
+        return new_data
 
     @classmethod
     @partial(jax.jit, static_argnums=(0,))
     def ln_likelihood(cls, flat_pars, data):
         component_pars = cls.unpack_component_pars(flat_pars)
+        data = cls.preprocess_data(flat_pars, data)
 
         lls = []
         for name, Component in cls.components.items():
@@ -166,8 +189,6 @@ class RVMixtureModel(JointModel):
             cls.w_mix_knots, flat_pars["arctanh_w_mix"], k=3
         )
         w = 0.5 * (jnp.tanh(arctanh_w_spl(data["phi1"])) + 1)
-        # b = [w, 1 - w]
-        # return logsumexp(jnp.array(lls), b=jnp.array(b), axis=0)
         return jnp.logaddexp(jnp.log(w) + lls[0], jnp.log(1 - w) + lls[1])
 
     @classmethod
@@ -180,6 +201,7 @@ class RVMixtureModel(JointModel):
             lp += Component.ln_prior(component_pars[name])
 
         lp += (-jnp.log(jnp.cosh(flat_pars["arctanh_w_mix"]) ** 2) - jnp.log(2)).sum()
+        lp += ln_normal(flat_pars["rv0"], 0, 25.0).sum()
 
         return lp
 
