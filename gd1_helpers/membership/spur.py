@@ -56,7 +56,7 @@ class SpurModel(StreamModel):
                 continue
 
             for i in range(1, size):
-                lp += ln_normal(pars[name][i], pars[name][i - 1], prior_stds[name])
+                lp += ln_normal(pars[name][i], pars[name][i - 1], prior_stds[name] ** 2)
 
         lp += jnp.sum(
             ln_normal(

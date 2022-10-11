@@ -36,6 +36,10 @@ class JointModel(Model):
                     tmp[k[: -(len(component_name) + 1)]] = v
             pars[component_name] = tmp
 
+        for k in cls.param_names:
+            if k in flat_pars:
+                pars[k] = flat_pars[k]
+
         # HACK:
         for name in ["mean_pm1", "ln_std_pm1", "mean_pm2", "ln_std_pm2"]:
             if "stream" in pars and name in pars["stream"]:
@@ -47,10 +51,15 @@ class JointModel(Model):
     @partial(jax.jit, static_argnums=(0,))
     def pack_component_pars(cls, pars):
         flat_pars = {}
+
         for component_name in cls.components:
             for k, v in pars[component_name].items():
                 flat_pars[k + f"_{component_name}"] = v
-            pass
+
+        for k in cls.param_names:
+            if k in pars:
+                flat_pars[k] = pars[k]
+
         return flat_pars
 
     @classmethod

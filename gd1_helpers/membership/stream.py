@@ -141,7 +141,7 @@ class StreamModel(Model):
                 continue
 
             for i in range(1, size):
-                lp += ln_normal(pars[name][i], pars[name][i - 1], prior_stds[name])
+                lp += ln_normal(pars[name][i], pars[name][i - 1], prior_stds[name] ** 2)
 
         # lp += ln_truncated_normal(
         #     pars["mean_phi2"], 0, 5.0, *cls.param_bounds["mean_phi2"]
