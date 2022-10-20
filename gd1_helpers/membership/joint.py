@@ -1,11 +1,11 @@
-from functools import partial
-
-import jax
 import jax.numpy as jnp
+import numpyro
+import numpyro.distributions as dist
 from jax.scipy.special import logsumexp
 
 from .background import BackgroundModel
 from .base import Model
+from .helpers import ln_simpson
 from .spur import SpurModel
 from .stream import StreamModel
 
@@ -18,69 +18,71 @@ class JointModel(Model):
         for ModelComponent in [BackgroundModel, StreamModel, SpurModel]
     }
 
-    param_names = {}
-    for component_name, ModelComponent in components.items():
-        for k, v in ModelComponent.param_names.items():
-            param_names[k + f"_{ModelComponent.name}"] = v
-
-    print(f"model has {sum(param_names.values())} parameters")
-
     @classmethod
-    @partial(jax.jit, static_argnums=(0,))
-    def unpack_component_pars(cls, flat_pars):
+    def setup_pars(cls):
         pars = {}
-        for component_name in cls.components:
-            tmp = {}
-            for k, v in flat_pars.items():
-                if k.endswith(component_name):
-                    tmp[k[: -(len(component_name) + 1)]] = v
-            pars[component_name] = tmp
-
-        for k in cls.param_names:
-            if k in flat_pars:
-                pars[k] = flat_pars[k]
-
-        # HACK:
-        for name in ["mean_pm1", "ln_std_pm1", "mean_pm2", "ln_std_pm2"]:
-            if "stream" in pars and name in pars["stream"]:
-                pars["spur"][name] = pars["stream"][name]
-
+        for comp_name, Component in cls.components.items():
+            pars[comp_name] = Component.setup_pars()
         return pars
 
     @classmethod
-    @partial(jax.jit, static_argnums=(0,))
-    def pack_component_pars(cls, pars):
-        flat_pars = {}
-
-        for component_name in cls.components:
-            for k, v in pars[component_name].items():
-                flat_pars[k + f"_{component_name}"] = v
-
-        for k in cls.param_names:
-            if k in pars:
-                flat_pars[k] = pars[k]
-
-        return flat_pars
+    def setup_splines(cls, pars):
+        spls = {}
+        for comp_name, Component in cls.components.items():
+            spls[comp_name] = Component.setup_splines(pars[comp_name])
+        return spls
 
     @classmethod
-    @partial(jax.jit, static_argnums=(0,))
-    def ln_likelihood(cls, flat_pars, data):
-        component_pars = cls.unpack_component_pars(flat_pars)
+    def setup_dists(cls, spls, data):
+        dists = {}
+        for comp_name, Component in cls.components.items():
+            if comp_name == "spur":
+                dists[comp_name] = Component.setup_dists(
+                    spls[comp_name], data, spls["stream"]
+                )
+            else:
+                dists[comp_name] = Component.setup_dists(spls[comp_name], data)
 
-        ln_Vs = []
-        lls = []
-        for name, Component in cls.components.items():
-            ln_Vn, lln = Component.ln_likelihood(component_pars[name], data)
-            ln_Vs.append(ln_Vn)
-            lls.append(lln)
-        return logsumexp(jnp.array(ln_Vs)), logsumexp(jnp.array(lls), axis=0)
+        return dists
 
     @classmethod
-    @partial(jax.jit, static_argnums=(0,))
-    def ln_prior(cls, flat_pars):
-        component_pars = cls.unpack_component_pars(flat_pars)
+    def setup_obs(cls, dists, data):
+        ln_Vs = {}
+        ln_n0s = {}
+        for name, comp_dists in dists.items():
+            grid = cls.components[name].integ_grid_phi1
+            ln_Vs[name] = ln_simpson(comp_dists["ln_n0"](grid), x=grid)
+            ln_n0s[name] = comp_dists["ln_n0"](data["phi1"])
 
-        lp = 0.0
-        for name, Component in cls.components.items():
-            lp += Component.ln_prior(component_pars[name])
-        return lp
+        ln_V = logsumexp(jnp.array(ln_Vs.values()))
+        ln_n0 = logsumexp(jnp.array(ln_n0s.values()), axis=0)
+        numpyro.factor(
+            "obs_ln_n0",
+            -jnp.exp(ln_V) + ln_n0.sum(),
+        )
+
+        # Density model
+        # TODO: for plotting, need to hack this stuff...
+        mix = dist.Categorical(
+            probs=jnp.array(
+                [
+                    jnp.exp(ln_n0s["background"] - ln_n0),
+                    jnp.exp(ln_n0s["stream"] - ln_n0),
+                    jnp.exp(ln_n0s["spur"] - ln_n0),
+                ]
+            ).T
+        )
+
+        for k in ["phi2", "pm1", "pm2"]:
+            numpyro.sample(
+                f"obs_{k}",
+                dist.MixtureGeneral(
+                    mix,
+                    [
+                        dists["background"][k],
+                        dists["stream"][k],
+                        dists["spur"][k],
+                    ],
+                ),
+                obs=data[k],
+            )
