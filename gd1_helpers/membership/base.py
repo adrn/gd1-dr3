@@ -9,7 +9,7 @@ class Model:
     phi2_lim = (-7, 5.0)
     pm1_lim = (-20, -1.0)
 
-    integ_grid_phi1 = jnp.arange(phi1_lim[0], phi1_lim[1] + 1e-3, 0.4)
+    integ_grid_phi1 = jnp.arange(phi1_lim[0], phi1_lim[1] + 1e-3, 0.2)
     bounds = {}
 
     @classmethod
@@ -30,7 +30,7 @@ class Model:
         pars = cls.setup_pars(**kwargs)
         spls = cls.setup_splines(pars, **kwargs)
         dists = cls.setup_dists(spls, data, **kwargs)
-        pars, spls, dists = cls.setup_obs(dists, data, **kwargs)
+        cls.setup_obs(dists, data, **kwargs)
 
     @classmethod
     def plot_projections(

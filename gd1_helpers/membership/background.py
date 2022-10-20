@@ -4,11 +4,7 @@ import numpyro.distributions as dist
 from jax_cosmo.scipy.interpolate import InterpolatedUnivariateSpline
 
 from .base import Model
-from .helpers import (
-    ln_simpson,
-    two_normal_mixture_spl,
-    two_truncated_normal_mixture_spl,
-)
+from .helpers import ln_simpson, two_normal_mixture, two_truncated_normal_mixture
 
 __all__ = ["BackgroundModel"]
 
@@ -58,6 +54,14 @@ class BackgroundModel(Model):
         "ln_std1_pm2": (-5, 5),
         "ln_std2_pm2": (-5, 5),
     }
+    priors = {
+        "w_pm1": {"name": "TruncatedNormal", "pars": {"loc": 0, "scale": 0.5}},
+        "mean1_pm1": {"name": "TruncatedNormal", "pars": {"loc": 0, "scale": 5}},
+        "mean2_pm1": {"name": "TruncatedNormal", "pars": {"loc": 0, "scale": 5}},
+        "w_pm2": {"name": "TruncatedNormal", "pars": {"loc": 0, "scale": 0.5}},
+        "mean1_pm2": {"name": "TruncatedNormal", "pars": {"loc": 0, "scale": 5}},
+        "mean2_pm2": {"name": "TruncatedNormal", "pars": {"loc": 0, "scale": 5}},
+    }
 
     @classmethod
     def setup_pars(cls):
@@ -79,11 +83,32 @@ class BackgroundModel(Model):
         for pm_name in ["pm1", "pm2"]:
             for comp_name in ["w", "mean1", "mean2", "ln_std1", "ln_std2"]:
                 name = f"{comp_name}_{pm_name}"
-                pars[name] = numpyro.sample(
-                    f"{name}_{cls.name}",
-                    dist.Uniform(*cls.bounds[name]),
-                    sample_shape=(len(cls.knots[pm_name]),),
-                )
+
+                if name in cls.priors:
+                    prior_spec = cls.priors[name]
+                    Prior = getattr(dist, prior_spec["name"])
+                    if name in cls.bounds:
+                        pars[name] = numpyro.sample(
+                            f"{name}_{cls.name}",
+                            Prior(
+                                low=cls.bounds[name][0],
+                                high=cls.bounds[name][1],
+                                **prior_spec["pars"],
+                            ),
+                            sample_shape=(len(cls.knots[pm_name]),),
+                        )
+                    else:
+                        pars[name] = numpyro.sample(
+                            f"{name}_{cls.name}",
+                            Prior(**prior_spec["pars"]),
+                            sample_shape=(len(cls.knots[pm_name]),),
+                        )
+                elif name in cls.bounds:
+                    pars[name] = numpyro.sample(
+                        f"{name}_{cls.name}",
+                        dist.Uniform(*cls.bounds[name]),
+                        sample_shape=(len(cls.knots[pm_name]),),
+                    )
 
         return pars
 
@@ -98,8 +123,12 @@ class BackgroundModel(Model):
         for pm_name in ["pm1", "pm2"]:
             for comp_name in ["w", "mean1", "mean2", "ln_std1", "ln_std2"]:
                 name = f"{comp_name}_{pm_name}"
+                if comp_name == "w":
+                    k = 1
+                else:
+                    k = 3
                 spls[name] = InterpolatedUnivariateSpline(
-                    cls.knots[pm_name], pars[name], k=3
+                    cls.knots[pm_name], pars[name], k=k
                 )
 
         return spls
@@ -111,27 +140,41 @@ class BackgroundModel(Model):
 
         dists["phi2"] = dist.Uniform(-7, jnp.full(len(data["phi1"]), 5))
 
-        dists["pm1"] = two_truncated_normal_mixture_spl(
-            w_spl=spls["w_pm1"],
-            mean_spls=[spls["mean1_pm1"], spls["mean2_pm1"]],
-            ln_std_spls=[spls["ln_std1_pm1"], spls["ln_std2_pm1"]],
-            x=data["phi1"],
+        dists["pm1"] = two_truncated_normal_mixture(
+            w=spls["w_pm1"](data["phi1"]),
+            mean1=spls["mean1_pm1"](data["phi1"]),
+            mean2=spls["mean2_pm1"](data["phi1"]),
+            ln_std1=spls["ln_std1_pm1"](data["phi1"]),
+            ln_std2=spls["ln_std2_pm1"](data["phi1"]),
             yerr=data.get("pm1_err", 0.0),
             low=cls.pm1_lim[0],
             high=cls.pm1_lim[1],
         )
 
-        dists["pm2"] = two_normal_mixture_spl(
-            w_spl=spls["w_pm2"],
-            mean_spls=[spls["mean1_pm2"], spls["mean2_pm2"]],
-            ln_std_spls=[spls["ln_std1_pm2"], spls["ln_std2_pm2"]],
-            x=data["phi1"],
+        dists["pm2"] = two_normal_mixture(
+            w=spls["w_pm2"](data["phi1"]),
+            mean1=spls["mean1_pm2"](data["phi1"]),
+            mean2=spls["mean2_pm2"](data["phi1"]),
+            ln_std1=spls["ln_std1_pm2"](data["phi1"]),
+            ln_std2=spls["ln_std2_pm2"](data["phi1"]),
             yerr=data.get("pm2_err", 0.0),
         )
+
         return dists
 
     @classmethod
     def setup_obs(cls, dists, data):
+        # ln_V = ln_simpson(dists["ln_n0"](cls.integ_grid_phi1), x=cls.integ_grid_phi1)
+        # # ln_prob = dists["phi2"].log_prob(data["phi2"]) + dists["pm2"].log_prob(data["pm2"])
+        # ln_prob = dists["pm2"].log_prob(data["pm2"])
+
+        # ln_like = -jnp.exp(ln_V) + (dists["ln_n0"](data["phi1"]) + ln_prob).sum()
+        # numpyro.factor(
+        #     f"obs_ln_n0_{cls.name}",
+        #     ln_like,
+        # )
+        # return ln_like
+
         ln_V = ln_simpson(dists["ln_n0"](cls.integ_grid_phi1), x=cls.integ_grid_phi1)
         numpyro.factor(
             f"obs_ln_n0_{cls.name}",
@@ -142,3 +185,9 @@ class BackgroundModel(Model):
         numpyro.sample(f"obs_pm2_{cls.name}", dists["pm2"], obs=data["pm2"])
 
     # TODO: smoothness priors on derivative of splines
+
+    @classmethod
+    def ln_prob(cls, pars, data):
+        spls = cls.setup_splines(pars)
+        dists = cls.setup_dists(spls, data)
+        return cls.setup_obs(dists, data)
