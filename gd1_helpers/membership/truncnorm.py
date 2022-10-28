@@ -13,6 +13,8 @@ from jax._src.scipy.stats.truncnorm import _log_gauss_mass
 from jax._src.scipy.stats.truncnorm import logpdf as truncnorm_logpdf
 from numpyro.distributions.util import is_prng_key, promote_shapes
 
+__all__ = ["APWTruncatedNormal"]
+
 
 @_wraps(osp_stats.truncnorm.ppf, update_doc=False)
 def ppf(q, a, b):
