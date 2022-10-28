@@ -4,7 +4,7 @@ import numpyro.distributions as dist
 from jax_cosmo.scipy.interpolate import InterpolatedUnivariateSpline
 
 from .base import Model
-from .helpers import ln_simpson, two_normal_mixture, two_truncated_normal_mixture
+from .helpers import two_normal_mixture, two_truncated_normal_mixture
 
 __all__ = ["BackgroundModel"]
 
@@ -28,6 +28,19 @@ class BackgroundModel(Model):
         "pm1": jnp.linspace(-110, 30, 7),
         "pm2": jnp.linspace(-110, 30, 7),
     }
+    params_to_knots = {
+        "ln_n0": "ln_n0",
+        "w_pm1": "pm1",
+        "mean1_pm1": "pm1",
+        "mean2_pm1": "pm1",
+        "ln_std1_pm1": "pm1",
+        "ln_std2_pm1": "pm1",
+        "w_pm2": "pm2",
+        "mean1_pm2": "pm2",
+        "mean2_pm2": "pm2",
+        "ln_std1_pm2": "pm2",
+        "ln_std2_pm2": "pm2",
+    }
     shapes = {
         "ln_n0": len(knots["ln_n0"]),
         "w_pm1": len(knots["pm1"]),
@@ -43,22 +56,22 @@ class BackgroundModel(Model):
     }
     bounds = {
         "ln_n0": (-2, 8),
-        "w_pm1": (0, 1),
+        "w_pm1": (0.1, 0.9),
         "mean1_pm1": (-5, 20),
         "mean2_pm1": (-5, 20),
-        "ln_std1_pm1": (-5, 5),
-        "ln_std2_pm1": (-5, 5),
-        "w_pm2": (0, 1),
+        "ln_std1_pm1": (0, 5),
+        "ln_std2_pm1": (0, 5),
+        "w_pm2": (0.1, 0.9),
         "mean1_pm2": (-10, 10),
         "mean2_pm2": (-10, 10),
-        "ln_std1_pm2": (-5, 5),
-        "ln_std2_pm2": (-5, 5),
+        "ln_std1_pm2": (0, 5),
+        "ln_std2_pm2": (0, 5),
     }
     priors = {
-        "w_pm1": {"name": "TruncatedNormal", "pars": {"loc": 0, "scale": 0.5}},
+        "w_pm1": {"name": "TruncatedNormal", "pars": {"loc": 0.5, "scale": 0.25}},
         "mean1_pm1": {"name": "TruncatedNormal", "pars": {"loc": 0, "scale": 5}},
         "mean2_pm1": {"name": "TruncatedNormal", "pars": {"loc": 0, "scale": 5}},
-        "w_pm2": {"name": "TruncatedNormal", "pars": {"loc": 0, "scale": 0.5}},
+        "w_pm2": {"name": "TruncatedNormal", "pars": {"loc": 0.5, "scale": 0.25}},
         "mean1_pm2": {"name": "TruncatedNormal", "pars": {"loc": 0, "scale": 5}},
         "mean2_pm2": {"name": "TruncatedNormal", "pars": {"loc": 0, "scale": 5}},
     }
@@ -123,10 +136,7 @@ class BackgroundModel(Model):
         for pm_name in ["pm1", "pm2"]:
             for comp_name in ["w", "mean1", "mean2", "ln_std1", "ln_std2"]:
                 name = f"{comp_name}_{pm_name}"
-                if comp_name == "w":
-                    k = 1
-                else:
-                    k = 3
+                k = 1 if comp_name == "w" else 3
                 spls[name] = InterpolatedUnivariateSpline(
                     cls.knots[pm_name], pars[name], k=k
                 )
@@ -140,10 +150,11 @@ class BackgroundModel(Model):
 
         dists["phi2"] = dist.Uniform(-7, jnp.full(len(data["phi1"]), 5))
 
+        mean1 = spls["mean1_pm1"](data["phi1"])
         dists["pm1"] = two_truncated_normal_mixture(
             w=spls["w_pm1"](data["phi1"]),
-            mean1=spls["mean1_pm1"](data["phi1"]),
-            mean2=spls["mean2_pm1"](data["phi1"]),
+            mean1=mean1,
+            mean2=mean1 + spls["mean2_pm1"](data["phi1"]),
             ln_std1=spls["ln_std1_pm1"](data["phi1"]),
             ln_std2=spls["ln_std2_pm1"](data["phi1"]),
             yerr=data.get("pm1_err", 0.0),
@@ -163,31 +174,27 @@ class BackgroundModel(Model):
         return dists
 
     @classmethod
-    def setup_obs(cls, dists, data):
-        # ln_V = ln_simpson(dists["ln_n0"](cls.integ_grid_phi1), x=cls.integ_grid_phi1)
-        # # ln_prob = dists["phi2"].log_prob(data["phi2"]) + dists["pm2"].log_prob(data["pm2"])
-        # ln_prob = dists["pm2"].log_prob(data["pm2"])
+    def setup_other_priors(cls, spls):
+        lp = 0.0
 
-        # ln_like = -jnp.exp(ln_V) + (dists["ln_n0"](data["phi1"]) + ln_prob).sum()
-        # numpyro.factor(
-        #     f"obs_ln_n0_{cls.name}",
-        #     ln_like,
-        # )
-        # return ln_like
+        # Smoothness priors
+        smooth = {
+            "ln_n0": 1.0 / 30.0,
+            "w_pm1": 0.1 / 30.0,
+            "mean1_pm1": 1.0 / 10.0,
+            "mean2_pm1": 1.0 / 10.0,
+            "ln_std1_pm1": 0.5 / 10.0,
+            "ln_std2_pm1": 0.5 / 10.0,
+            "w_pm2": 0.1 / 30.0,
+            "mean1_pm2": 1.0 / 10.0,
+            "mean2_pm2": 1.0 / 10.0,
+            "ln_std1_pm2": 0.5 / 10.0,
+            "ln_std2_pm2": 0.5 / 10.0,
+        }
+        for param_name, std in smooth.items():
+            knots = cls.knots[cls.params_to_knots[param_name]]
+            deriv = spls[param_name].derivative(knots)
+            lp = lp + dist.Normal(deriv[:-1], std / 10.0).log_prob(deriv[1:]).sum()
 
-        ln_V = ln_simpson(dists["ln_n0"](cls.integ_grid_phi1), x=cls.integ_grid_phi1)
-        numpyro.factor(
-            f"obs_ln_n0_{cls.name}",
-            -jnp.exp(ln_V) + dists["ln_n0"](data["phi1"]).sum(),
-        )
-        numpyro.sample(f"obs_phi2_{cls.name}", dists["phi2"], obs=data["phi2"])
-        numpyro.sample(f"obs_pm1_{cls.name}", dists["pm1"], obs=data["pm1"])
-        numpyro.sample(f"obs_pm2_{cls.name}", dists["pm2"], obs=data["pm2"])
-
-    # TODO: smoothness priors on derivative of splines
-
-    @classmethod
-    def ln_prob(cls, pars, data):
-        spls = cls.setup_splines(pars)
-        dists = cls.setup_dists(spls, data)
-        return cls.setup_obs(dists, data)
+        numpyro.factor(f"smooth_{cls.name}", lp)
+        return lp

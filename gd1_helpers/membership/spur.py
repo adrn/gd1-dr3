@@ -10,13 +10,18 @@ __all__ = ["SpurModel"]
 
 
 class SpurModel(Model):
-    name = "stream"
+    name = "spur"
 
     phi1_lim = (-45, 0)
     integ_grid_phi1 = jnp.arange(phi1_lim[0], phi1_lim[1] + 1e-3, 0.1)
     knots = {
         "ln_n0": jnp.arange(-55, 0 + 1e-3, 3.0),  # 3º step
         "phi2": jnp.arange(-55, 0 + 1e-3, 3.0),  # 3º step
+    }
+    params_to_knots = {
+        "ln_n0": "ln_n0",
+        "mean_phi2": "phi2",
+        "ln_std_phi2": "phi2",
     }
     shapes = {
         "ln_n0": len(knots["ln_n0"]),
@@ -52,6 +57,8 @@ class SpurModel(Model):
             sample_shape=(len(cls.knots[name]),),
         )
 
+        # TODO: smoothness priors on derivative of splines
+
         return pars
 
     @classmethod
@@ -59,15 +66,15 @@ class SpurModel(Model):
         spls = {}
 
         spls["ln_n0"] = InterpolatedUnivariateSpline(
-            cls.knots["ln_n0"], pars["ln_n0"], k=3
+            cls.knots["ln_n0"], pars["ln_n0"], k=1
         )
 
         name = "phi2"
         spls[f"mean_{name}"] = InterpolatedUnivariateSpline(
-            cls.knots[name], pars[f"mean_{name}"], k=3
+            cls.knots[name], pars[f"mean_{name}"], k=1
         )
         spls[f"ln_std_{name}"] = InterpolatedUnivariateSpline(
-            cls.knots[name], pars[f"ln_std_{name}"], k=3
+            cls.knots[name], pars[f"ln_std_{name}"], k=1
         )
 
         return spls
@@ -110,4 +117,21 @@ class SpurModel(Model):
         numpyro.sample(f"obs_pm1_{cls.name}", dists["pm1"], obs=data["pm1"])
         numpyro.sample(f"obs_pm2_{cls.name}", dists["pm2"], obs=data["pm2"])
 
-    # TODO: smoothness priors on derivative of splines
+    @classmethod
+    def setup_other_priors(cls, spls):
+        lp = 0.0
+
+        # Smoothness priors
+        smooth = {
+            "ln_n0": 1.0 / 30.0,
+            "mean_phi2": 1.0 / 10.0,
+            "ln_std_phi2": 0.5 / 10.0,
+        }
+        for param_name, std in smooth.items():
+            knots = cls.knots[cls.params_to_knots[param_name]]
+            deriv = spls[param_name].derivative(knots)
+            lp = lp + dist.Normal(0.0, std).log_prob(deriv).sum()
+
+        numpyro.factor(f"smooth_{cls.name}", lp)
+
+        # TODO: sigmoid shit

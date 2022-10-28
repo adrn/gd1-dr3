@@ -4,7 +4,6 @@ import numpyro.distributions as dist
 from jax_cosmo.scipy.interpolate import InterpolatedUnivariateSpline
 
 from .base import Model
-from .helpers import ln_simpson
 
 __all__ = ["StreamModel"]
 
@@ -18,6 +17,15 @@ class StreamModel(Model):
         "pm1": jnp.linspace(-110, 30, 9),
         "pm2": jnp.linspace(-110, 30, 7),
     }
+    params_to_knots = {
+        "ln_n0": "ln_n0",
+        "mean_phi2": "phi2",
+        "ln_std_phi2": "phi2",
+        "mean_pm1": "pm1",
+        "ln_std_pm1": "pm1",
+        "mean_pm2": "pm2",
+        "ln_std_pm2": "pm2",
+    }
     shapes = {
         "ln_n0": len(knots["ln_n0"]),
         "mean_phi2": len(knots["phi2"]),
@@ -30,9 +38,9 @@ class StreamModel(Model):
     bounds = {
         "ln_n0": (-8, 8),
         "mean_phi2": Model.phi2_lim,
-        "ln_std_phi2": (-5, 0),
+        "ln_std_phi2": (-2, 0.5),
         "mean_pm1": Model.pm1_lim,
-        "ln_std_pm1": (-5, -1),
+        "ln_std_pm1": (-2.5, 0),
         "mean_pm2": (-5, 5),
         "ln_std_pm2": (-5, -1),
     }
@@ -108,19 +116,6 @@ class StreamModel(Model):
         return dists
 
     @classmethod
-    def setup_obs(cls, dists, data):
-        ln_V = ln_simpson(dists["ln_n0"](cls.integ_grid_phi1), x=cls.integ_grid_phi1)
-        numpyro.factor(
-            f"obs_ln_n0_{cls.name}",
-            -jnp.exp(ln_V) + dists["ln_n0"](data["phi1"]).sum(),
-        )
-        numpyro.sample(f"obs_phi2_{cls.name}", dists["phi2"], obs=data["phi2"])
-        numpyro.sample(f"obs_pm1_{cls.name}", dists["pm1"], obs=data["pm1"])
-        numpyro.sample(f"obs_pm2_{cls.name}", dists["pm2"], obs=data["pm2"])
-
-    # TODO: smoothness priors on derivative of splines
-
-    @classmethod
     def plot_projections(
         cls,
         pars,
@@ -144,34 +139,24 @@ class StreamModel(Model):
 
         return fig, axes
 
-    # @classmethod
-    # @partial(jax.jit, static_argnums=(0,))
-    # def ln_prior(cls, pars):
-    #     lp = 0.0
+    @classmethod
+    def setup_other_priors(cls, spls):
+        lp = 0.0
 
-    #     prior_stds = {
-    #         "mean_phi2": 1.0,
-    #         "ln_std_phi2": 1.0,
-    #         # "mean_plx": 1.0,
-    #         "mean_pm1": 3.0,
-    #         "ln_std_pm1": 0.5,
-    #         "mean_pm2": 3.0,
-    #         "ln_std_pm2": 0.5,
-    #     }
-    #     for name, size in cls.param_names.items():
-    #         if name not in prior_stds:
-    #             continue
+        # Smoothness priors
+        smooth = {
+            "ln_n0": 1.0 / 30.0,
+            "mean_phi2": 1.0 / 10.0,
+            "ln_std_phi2": 0.5 / 10.0,
+            "mean_pm1": 1.0 / 10.0,
+            "ln_std_pm1": 0.5 / 10.0,
+            "mean_pm2": 1.0 / 10.0,
+            "ln_std_pm2": 0.5 / 10.0,
+        }
+        for param_name, std in smooth.items():
+            knots = cls.knots[cls.params_to_knots[param_name]]
+            deriv = spls[param_name].derivative(knots)
+            lp = lp + dist.Normal(0.0, std).log_prob(deriv).sum()
 
-    #         for i in range(1, size):
-    #             lp += ln_normal(pars[name][i], pars[name][i - 1], prior_stds[name] ** 2)
-
-    #     # lp += ln_truncated_normal(
-    #     #     pars["mean_phi2"], 0, 5.0, *cls.param_bounds["mean_phi2"]
-    #     # ).sum()
-    #     lp += ln_truncated_normal(
-    #         pars["ln_std_phi2"], -0.5, 3.0, *cls.param_bounds["ln_std_phi2"]
-    #     ).sum()
-    #     for name in ["mean_pm1", "ln_std_pm1", "mean_pm2", "ln_std_pm2"]:
-    #         lp += ln_uniform(pars[name], *cls.param_bounds[name]).sum()
-
-    #     return lp
+        numpyro.factor(f"smooth_{cls.name}", lp)
+        return lp

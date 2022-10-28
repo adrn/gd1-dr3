@@ -1,7 +1,9 @@
 import jax.numpy as jnp
+import numpy as np
 import numpyro
 import numpyro.distributions as dist
 from jax.scipy.special import logsumexp
+from scipy.special import logsumexp as s_logsumexp
 
 from .background import BackgroundModel
 from .base import Model
@@ -38,12 +40,17 @@ class JointModel(Model):
         for comp_name, Component in cls.components.items():
             if comp_name == "spur":
                 dists[comp_name] = Component.setup_dists(
-                    spls[comp_name], data, spls["stream"]
+                    spls[comp_name], data, stream_spls=spls["stream"]
                 )
             else:
                 dists[comp_name] = Component.setup_dists(spls[comp_name], data)
 
         return dists
+
+    @classmethod
+    def setup_other_priors(cls, spls):
+        for comp_name, Component in cls.components.items():
+            Component.setup_other_priors(spls[comp_name])
 
     @classmethod
     def setup_obs(cls, dists, data):
@@ -86,3 +93,33 @@ class JointModel(Model):
                 ),
                 obs=data[k],
             )
+
+    @classmethod
+    def evaluate_on_grids(cls, pars, grids=None, **kwargs):
+        from .plot import _default_grids
+
+        if grids is None:
+            grids = {}
+        for name in _default_grids:
+            grids.setdefault(name, _default_grids[name])
+
+        all_spls = cls.setup_splines(pars, **kwargs)
+
+        all_grids = {}
+        terms = {}
+        for name in ["phi2", "pm1", "pm2"]:
+            grid1, grid2 = np.meshgrid(grids["phi1"], grids[name])
+            all_dists = cls.setup_dists(
+                all_spls, {"phi1": grid1.ravel(), f"{name}_err": 0.0}, **kwargs
+            )
+
+            terms[name] = []
+            for comp_name in cls.components:
+                ln_dens = all_dists[comp_name][name].log_prob(grid2.ravel()) + all_spls[
+                    comp_name
+                ]["ln_n0"](grid1.ravel())
+                terms[name].append(ln_dens.reshape(grid1.shape))
+            terms[name] = s_logsumexp(terms[name], axis=0)
+            all_grids[name] = (grid1, grid2)
+
+        return all_grids, terms
