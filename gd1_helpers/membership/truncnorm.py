@@ -1,108 +1,97 @@
+"""
+Jax and numpyro support for truncated Normal distributions.
+"""
+
+import numpyro.distributions as dist
 import scipy.stats as osp_stats
 from jax import lax
 from jax._src.numpy import lax_numpy as jnp
-from jax._src.numpy.lax_numpy import _promote_args_inexact
 from jax._src.numpy.util import _wraps
-from jax.scipy import special, stats
+from jax._src.random import uniform
+from jax._src.scipy import special
+from jax._src.scipy.stats.truncnorm import _log_gauss_mass
+from jax._src.scipy.stats.truncnorm import logpdf as truncnorm_logpdf
+from numpyro.distributions.util import is_prng_key, promote_shapes
 
 
-def _log_diff(x, y):
-    return special.logsumexp(
-        jnp.array([x, y]), b=jnp.array([jnp.ones_like(x), -jnp.ones_like(y)]), axis=0
-    )
+@_wraps(osp_stats.truncnorm.ppf, update_doc=False)
+def ppf(q, a, b):
+    q, a, b = jnp.broadcast_arrays(q, a, b)
 
+    case_left = a < 0
+    case_right = ~case_left
 
-def _log_gauss_mass(a, b):
-    """Log of Gaussian probability mass within an interval"""
-    a, b = jnp.array(a), jnp.array(b)
-    a, b = jnp.broadcast_arrays(a, b)
+    def ppf_left(q, a, b):
+        log_Phi_x = jnp.logaddexp(
+            special.log_ndtr(a), jnp.log(q) + _log_gauss_mass(a, b)
+        )
+        # TODO: should use ndtri_exp(log_Phi_x), but that's not in jax.scipy.special
+        return special.ndtri(jnp.exp(log_Phi_x))
 
-    # Note: Docstring carried over from scipy
-    # Calculations in right tail are inaccurate, so we'll exploit the
-    # symmetry and work only in the left tail
-    case_left = b <= 0
-    case_right = a > 0
-    case_central = ~(case_left | case_right)
+    def ppf_right(q, a, b):
+        log_Phi_x = jnp.logaddexp(
+            special.log_ndtr(-b), jnp.log1p(-q) + _log_gauss_mass(a, b)
+        )
+        # TODO: should use ndtri_exp(log_Phi_x), but that's not in jax.scipy.special
+        return -special.ndtri(jnp.exp(log_Phi_x))
 
-    def mass_case_left(a, b):
-        return _log_diff(special.log_ndtr(b), special.log_ndtr(a))
-
-    def mass_case_right(a, b):
-        return mass_case_left(-b, -a)
-
-    def mass_case_central(a, b):
-        # Note: Docstring carried over from scipy
-        # Previously, this was implemented as:
-        # left_mass = mass_case_left(a, 0)
-        # right_mass = mass_case_right(0, b)
-        # return _log_sum(left_mass, right_mass)
-        # Catastrophic cancellation occurs as np.exp(log_mass) approaches 1.
-        # Correct for this with an alternative formulation.
-        # We're not concerned with underflow here: if only one term
-        # underflows, it was insignificant; if both terms underflow,
-        # the result can't accurately be represented in logspace anyway
-        # because sc.log1p(x) ~ x for small x.
-        return jnp.log1p(-special.ndtr(a) - special.ndtr(-b))
-
+    out = jnp.empty_like(q)
     out = jnp.select(
-        [case_left, case_right, case_central],
-        [mass_case_left(a, b), mass_case_right(a, b), mass_case_central(a, b)],
+        [case_left, case_right],
+        [ppf_left(q, a, b), ppf_right(q, a, b)],
     )
+
     return out
 
 
-@_wraps(osp_stats.truncnorm.logpdf, update_doc=False)
-def logpdf(x, a, b, loc=0, scale=1):
-    x, a, b, loc, scale = _promote_args_inexact("truncnorm.logpdf", x, a, b, loc, scale)
-    val = lax.sub(stats.norm.logpdf(x, loc, scale), _log_gauss_mass(a, b))
-
-    x_scaled = lax.div(lax.sub(x, loc), scale)
-    val = jnp.where((x_scaled < a) | (x_scaled > b), -jnp.inf, val)
-    return val
-
-
-@_wraps(osp_stats.truncnorm.pdf, update_doc=False)
-def pdf(x, a, b, loc=0, scale=1):
-    return lax.exp(logpdf(x, a, b, loc, scale))
+def rvs(key, a, b, loc=0.0, scale=1.0, shape=()):
+    dtype = jnp.result_type(float)
+    finfo = jnp.finfo(dtype)
+    minval = finfo.tiny
+    U = uniform(key, shape=shape, minval=minval)
+    Y = ppf(U, a, b, loc=loc, scale=scale)
+    return Y * scale + loc
 
 
-@_wraps(osp_stats.truncnorm.logsf, update_doc=False)
-def logsf(x, a, b, loc=0, scale=1):
-    x, a, b, loc, scale = _promote_args_inexact("truncnorm.logsf", x, a, b, loc, scale)
-    x, a, b = jnp.broadcast_arrays(x, a, b)
-    x = lax.div(lax.sub(x, loc), scale)
-    logsf = _log_gauss_mass(x, b) - _log_gauss_mass(a, b)
-    logcdf = _log_gauss_mass(a, x) - _log_gauss_mass(a, b)
+class APWTruncatedNormal(dist.Distribution):
+    arg_constraints = {
+        "loc": dist.constraints.real,
+        "scale": dist.constraints.positive,
+        "low": dist.constraints.dependent,
+        "high": dist.constraints.dependent,
+    }
+    reparametrized_params = ["low", "high"]
 
-    logsf = jnp.select(
-        # third condition: avoid catastrophic cancellation (from scipy)
-        [x >= b, x <= a, logsf > -0.1, x > a],
-        [-jnp.inf, 0, jnp.log1p(-jnp.exp(logcdf)), logsf],
-    )
-    return logsf
+    def __init__(self, loc=0.0, scale=1.0, low=-jnp.inf, high=jnp.inf):
+        self.loc, self.scale, self.low, self.high = promote_shapes(
+            loc, scale, low, high
+        )
+        batch_shape = lax.broadcast_shapes(
+            jnp.shape(loc), jnp.shape(scale), jnp.shape(low), jnp.shape(high)
+        )
 
+        self._a = (self.low - self.loc) / self.scale
+        self._b = (self.high - self.loc) / self.scale
+        self._support = dist.constraints.interval(self.low, self.high)
 
-@_wraps(osp_stats.truncnorm.sf, update_doc=False)
-def sf(x, a, b, loc=0, scale=1):
-    return lax.exp(logsf(x, a, b, loc, scale))
+        super().__init__(batch_shape=batch_shape, event_shape=())
 
+    @dist.constraints.dependent_property(is_discrete=False, event_dim=0)
+    def support(self):
+        return self._support
 
-@_wraps(osp_stats.truncnorm.logcdf, update_doc=False)
-def logcdf(x, a, b, loc=0, scale=1):
-    x, a, b, loc, scale = _promote_args_inexact("truncnorm.logcdf", x, a, b, loc, scale)
-    x, a, b = jnp.broadcast_arrays(x, a, b)
-    x = lax.div(lax.sub(x, loc), scale)
-    logcdf = _log_gauss_mass(a, x) - _log_gauss_mass(a, b)
-    logsf = _log_gauss_mass(x, b) - _log_gauss_mass(a, b)
+    def sample(self, key, sample_shape=()):
+        assert is_prng_key(key)
+        return rvs(
+            key,
+            self._a,
+            self._b,
+            loc=self.loc,
+            scale=self.scale,
+            shape=sample_shape + self.batch_shape,
+        )
 
-    logcdf = jnp.select(
-        # third condition: avoid catastrophic cancellation (from scipy)
-        [x >= b, x <= a, logcdf > -0.1, x > a],
-        [0, -jnp.inf, jnp.log1p(-jnp.exp(logsf)), logcdf],
-    )
-    return logcdf
-
-
-@_wraps(osp_stats.truncnorm.cdf, update_doc=False)
-def cdf(x, a, b, loc=0, scale=1):
-    return lax.exp(logcdf(x, a, b, loc, scale))
+    def log_prob(self, value):
+        return truncnorm_logpdf(
+            value, a=self._a, b=self._b, loc=self.loc, scale=self.scale
+        )
