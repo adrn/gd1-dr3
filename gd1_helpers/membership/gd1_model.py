@@ -65,8 +65,6 @@ class GD1StreamModel(GD1ComponentBase, SplineDensityModelBase):
     _step_n0 = 4.0  # deg
     _step_phi2 = 6.0  # deg
     knots = {
-        # "ln_n0": jnp.arange(-100 - 2 * _step_n0, 20 + 2 * _step_n0 + 1e-3, _step_n0),
-        # "phi2": jnp.arange(-100 - 2 * _step_phi2, 20 + 2 * _step_phi2 + 1e-3, _step_phi2),
         "ln_n0": jnp.arange(-100 - _step_n0, 20 + _step_n0 + 1e-3, _step_n0),
         "phi2": jnp.arange(-100 - _step_phi2, 20 + _step_phi2 + 1e-3, _step_phi2),
     }
