@@ -4,6 +4,8 @@ import numpyro
 import numpyro.distributions as dist
 from stream_membership import CustomTruncatedNormal, SplineDensityModelBase
 
+__all__ = ["GD1BackgroundModel", "GD1StreamModel"]
+
 
 class GD1ComponentBase:
     coord_names = ("phi2",)
