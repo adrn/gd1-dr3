@@ -2,9 +2,7 @@ import jax.numpy as jnp
 import numpy as np
 import numpyro
 import numpyro.distributions as dist
-
-from .base import SplineDensityModelBase
-from .truncnorm import APWTruncatedNormal
+from stream_membership import CustomTruncatedNormal, SplineDensityModelBase
 
 
 class GD1ComponentBase:
@@ -102,7 +100,7 @@ class GD1StreamModel(GD1ComponentBase, SplineDensityModelBase):
     def get_dists(self, data):
         dists = {}
         dists["ln_n0"] = self.splines["ln_n0"]
-        dists["phi2"] = APWTruncatedNormal(
+        dists["phi2"] = CustomTruncatedNormal(
             loc=self.splines["phi2"]["mean"](data["phi1"]),
             scale=jnp.exp(self.splines["phi2"]["ln_std"](data["phi1"])),
             low=self.coord_bounds["phi2"][0],
