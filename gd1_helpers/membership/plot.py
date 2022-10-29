@@ -1,8 +1,6 @@
 import numpy as np
 import scipy.ndimage as scn
 
-from .base import Model
-
 __all__ = ["plot_data_projections"]
 
 _default_labels = {
@@ -10,21 +8,11 @@ _default_labels = {
     "pm1": r"$\mu_{\phi_1}$",
     "pm2": r"$\mu_{\phi_2}$",
 }
-_default_grids = {
-    "phi1": np.arange(-100, 20 + 1e-3, 0.2),
-    "phi2": np.arange(Model.phi2_lim[0], Model.phi2_lim[1] + 1e-3, 0.1),
-    "pm1": np.arange(-15, Model.pm1_lim[1] + 1e-3, 0.1),
-    "pm2": np.arange(-10, 10 + 1e-3, 0.1),
-}
 
 
-def plot_data_projections(
-    data, smooth=2.0, grids=None, axes=None, label=True, **kwargs
-):
+def plot_data_projections(data, grids, smooth=2.0, axes=None, label=True, **kwargs):
     if grids is None:
         grids = {}
-    for name in _default_grids:
-        grids.setdefault(name, _default_grids[name])
 
     if axes is None:
         import matplotlib.pyplot as plt
