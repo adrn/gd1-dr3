@@ -212,6 +212,57 @@ class ModelBase(abc.ABC):
             pcolormesh_kwargs=pcolormesh_kwargs,
         )
 
+    def plot_knots(self, axes=None, add_legend=True):
+
+        if axes is None:
+            import matplotlib.pyplot as plt
+
+            _, axes = plt.subplots(
+                len(self.coord_names) + 1,
+                1,
+                figsize=(8, 4 * (len(self.coord_names) + 1)),
+                sharex=True,
+                constrained_layout=True,
+            )
+
+        spl = self.splines[self.density_name]
+        (l,) = axes[0].plot(
+            self.integration_grid_phi1,
+            spl(self.integration_grid_phi1),
+            marker="",
+            label=self.density_name,
+        )
+        axes[0].scatter(
+            self.knots[self.density_name],
+            spl(self.knots[self.density_name]),
+            color=l.get_color(),
+        )
+        axes[0].set_ylabel(self.density_name)
+
+        for i, coord_name in enumerate(self.coord_names, start=1):
+            ax = axes[i]
+
+            for par_name, spl in self.splines.get(coord_name, {}).items():
+                (l,) = ax.plot(
+                    self.integration_grid_phi1,
+                    spl(self.integration_grid_phi1),
+                    label=f"{coord_name}: {par_name}",
+                    marker="",
+                )
+                ax.scatter(
+                    self.knots[coord_name],
+                    spl(self.knots[coord_name]),
+                    color=l.get_color(),
+                )
+            ax.set_ylabel(coord_name)
+
+        if add_legend:
+            axes[0].legend(loc="best")
+
+        axes[0].set_title(self.name)
+
+        return axes[0].figure, axes
+
 
 class SplineDensityModelBase(ModelBase):
     # the name of the model component (e.g., "steam" or "background"):
@@ -531,3 +582,21 @@ class SplineDensityMixtureModel(ModelBase):
         for C in Components:
             pars_unpacked[C.name] = C.unpack_params(pars_unpacked[C.name])
         return pars_unpacked
+
+    def plot_knots(self, axes=None, **kwargs):
+
+        if axes is None:
+            import matplotlib.pyplot as plt
+
+            _, axes = plt.subplots(
+                len(self.coord_names) + 1,
+                len(self.components),
+                figsize=(6 * len(self.components), 3 * (len(self.coord_names) + 1)),
+                sharex=True,
+                constrained_layout=True,
+            )
+
+        for i, c in enumerate(self.components):
+            c.plot_knots(axes=axes[:, i], **kwargs)
+
+        return np.array(axes).flat[0].figure, axes
