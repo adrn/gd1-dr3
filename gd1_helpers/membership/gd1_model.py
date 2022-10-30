@@ -8,13 +8,13 @@ __all__ = ["GD1BackgroundModel", "GD1StreamModel"]
 
 
 class GD1ComponentBase:
-    coord_names = ("phi2",)
-    coord_bounds = {"phi1": (-100, 20), "phi2": (-7, 5)}
+    coord_names = ("phi2",)  # "pm1")
+    coord_bounds = {"phi1": (-100, 20), "phi2": (-7, 5), "pm1": (-15, -1.0)}
 
     default_grids = {
         "phi1": np.arange(*coord_bounds["phi1"], 0.2),
         "phi2": np.arange(*coord_bounds["phi2"], 0.1),
-        # "pm1": np.arange(-15, Model.pm1_lim[1] + 1e-3, 0.1),
+        "pm1": np.arange(*coord_bounds["pm1"], 0.1),
         # "pm2": np.arange(-10, 10 + 1e-3, 0.1),
     }
 
@@ -25,7 +25,7 @@ class GD1BackgroundModel(GD1ComponentBase, SplineDensityModelBase):
     knots = {
         "ln_n0": jnp.linspace(-110, 30, 9),
     }
-    param_bounds = {"ln_n0": (-5, 8), "phi2": {}}
+    param_bounds = {"ln_n0": (-5, 8), "phi2": {}, "pm1": {}}
 
     # Can probably use a lower resolution grid here?
     integration_grid_phi1 = jnp.arange(-100, 20 + 1e-3, 1.0)
