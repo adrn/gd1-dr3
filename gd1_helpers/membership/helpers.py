@@ -1,8 +1,7 @@
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsci
-
-from .truncnorm import logpdf as truncnorm_logpdf
+from jax._src.scipy.stats.truncnorm import logpdf as truncnorm_logpdf
 
 __all__ = ["ln_uniform", "ln_normal", "ln_truncated_normal", "ln_simpson"]
 
