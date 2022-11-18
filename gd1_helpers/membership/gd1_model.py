@@ -24,7 +24,7 @@ def _get_knots(low, high, step, pad_num=2, arange=True):
 
 
 class GD1ComponentBase:
-    coord_names = ("phi2", "pm1")
+    coord_names = ("phi2", "pm1", "pm2")
     coord_bounds = {"phi1": (-100, 20), "phi2": (-7, 5), "pm1": (-15, -1.0)}
 
     default_grids = {
