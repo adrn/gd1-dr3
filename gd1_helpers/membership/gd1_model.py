@@ -140,7 +140,6 @@ class GD1BackgroundModel(GD1ComponentBase, SplineDensityModelBase):
 
     def extra_ln_prior(self):
         lp = 0.0
-        return lp
 
         lp += (
             dist.Normal(0, 0.5)
@@ -240,7 +239,6 @@ class GD1StreamModel(GD1ComponentBase, SplineDensityModelBase):
 
     def extra_ln_prior(self):
         lp = 0.0
-        return lp
 
         lp += (
             dist.Normal(0, 0.25)
