@@ -19,7 +19,6 @@ from sklearn.neighbors import KernelDensity
 
 class FitPert:
     def __init__(self, data, data_short, mw, w0_now):
-
         self.data = data
         self.data_short = data_short
         self.mw = mw
@@ -37,7 +36,6 @@ class FitPert:
         ]
 
     def pre_fitting(self, vals):
-
         (
             self.b,
             self.psi,
@@ -109,7 +107,6 @@ class FitPert:
         return R
 
     def get_perturber_w0_at_impact(self):
-
         # Get the rotation matrix to rotate from Galactocentric to cylindrical
         # impact coordinates at the impact site along the stream
         R = self.get_cyl_rotation()
