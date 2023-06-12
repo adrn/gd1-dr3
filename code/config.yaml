@@ -1,0 +1,53 @@
+#impact parameter
+min_b: 1
+max_b: 500
+grid_b: [1, 5, 10, 50]
+#grid_b: [4, 8, 12, 16, 20]
+
+# angle of "impact" in cylindrical coordinates
+min_psi: 0
+max_psi: 360
+grid_psi: [0, 15, 30, 45, 60, 135, 150, 165, 180, 195, 210, 225, 300, 315, 330, 345]
+#grid_psi: [160,165,170,175,180,185,190,195,200]
+
+# where along the stream the closest approach is
+min_z: 0
+max_z: 0.5
+grid_z: 0.2
+
+# velocity in z direction in cylindrical coordinates of the stream
+min_vz: 50
+# if max is higher than 300, the perturber is unbound to the MW
+max_vz: 250 
+grid_vz: 25
+#min_vz: 150
+# if max is higher than 300, the perturber is unbound to the MW
+#max_vz: 210 
+#grid_vz: 5
+
+# velocity in angle direction in cylindrical coordinates of the stream
+min_vpsi: 10
+max_vpsi: 200
+grid_vpsi: 20
+#min_vpsi: 20
+#max_vpsi: 70
+#grid_vpsi: 5
+
+# time of interaction
+min_t: 100
+max_t: 1100
+grid_t: 10
+#min_t: 650
+#max_t: 710
+#grid_t: 2
+
+# log of the mass of the perturber
+min_logm: 5.75
+max_logm: 6.8
+grid_logm: 0.25
+#min_logm: 5.8
+#max_logm: 6.3
+#grid_logm: 0.1
+
+# core radius of the perturber
+grid_core: [0, 0.5, 1, 1.5, 2]
