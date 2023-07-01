@@ -1,31 +1,21 @@
 import jax.numpy as jnp
 import numpy as np
-import numpyro
 import numpyro.distributions as dist
-from stream_membership import CustomTruncatedNormal, SplineDensityModelBase
-from stream_membership.helpers import two_normal_mixture, two_truncated_normal_mixture
+from stream_membership import StreamModel
+from stream_membership.utils import get_grid
+from stream_membership.variables import (
+    GridGMMVariable,
+    Normal1DSplineMixtureVariable,
+    Normal1DSplineVariable,
+    UniformVariable,
+)
 
-__all__ = ["GD1BackgroundModel", "GD1StreamModel"]
-
-
-def z_to_w(z):
-    return (jnp.tanh(z) + 1) / 2.0
-
-
-def w_to_z(w):
-    return jnp.arctanh(2 * w - 1)
+phi1_lim = (-100, 20)
 
 
-def _get_knots(low, high, step, pad_num=2, arange=True):
-    if arange:
-        return jnp.arange(low - pad_num * step, high + pad_num * step + step, step)
-    else:
-        return jnp.linspace(low - pad_num * step, high + pad_num * step, step)
-
-
-class GD1ComponentBase:
+class GD1Base:
     coord_names = ("phi2", "pm1", "pm2")
-    coord_bounds = {"phi1": (-100, 20), "phi2": (-7, 5), "pm1": (-15, -1.0)}
+    coord_bounds = {"phi1": phi1_lim, "phi2": (-7, 5), "pm1": (-15, -1.0)}
 
     default_grids = {
         "phi1": np.arange(*coord_bounds["phi1"], 0.2),
@@ -35,228 +25,185 @@ class GD1ComponentBase:
     }
 
 
-phi1_lim = GD1ComponentBase.coord_bounds["phi1"]
-
-
-class GD1BackgroundModel(GD1ComponentBase, SplineDensityModelBase):
+class GD1BackgroundModel(GD1Base, StreamModel):
     name = "background"
 
-    knots = {
-        "ln_n0": _get_knots(*phi1_lim, 9, arange=False),
-        "pm1": _get_knots(*phi1_lim, 7, arange=False),
-        "pm2": _get_knots(*phi1_lim, 9, arange=False),
+    ln_N_dist = dist.Uniform(-10, 15)
+
+    phi1_locs = get_grid(*phi1_lim, 20.0, pad_num=1).reshape(-1, 1)  # every 20º
+    pm1_knots = get_grid(*GD1Base.coord_bounds["phi1"], 10.0)
+    pm2_knots = get_grid(*GD1Base.coord_bounds["phi1"], 20.0)
+
+    variables = {
+        "phi1": GridGMMVariable(
+            param_priors={
+                "zs": dist.Uniform(-8.0, 8.0).expand((phi1_locs.shape[0] - 1,)),
+            },
+            locs=phi1_locs,
+            scales=np.full_like(phi1_locs, 20.0),
+            coord_bounds=phi1_lim,
+        ),
+        "phi2": UniformVariable(
+            param_priors={}, coord_bounds=GD1Base.coord_bounds["phi2"]
+        ),
+        "pm1": Normal1DSplineMixtureVariable(
+            param_priors={
+                "w": dist.Uniform(0, 1).expand((pm1_knots.size,)),
+                "mean1": dist.Uniform(-2, 20).expand((pm1_knots.size,)),
+                "mean2": dist.Uniform(-2, 20).expand((pm1_knots.size,)),
+                "ln_std1": dist.Uniform(-5, 5).expand((pm1_knots.size,)),
+                "ln_std2": dist.Uniform(-5, 5).expand((pm1_knots.size,)),
+            },
+            knots=pm1_knots,
+            spline_ks={"w": 1},
+            coord_bounds=GD1Base.coord_bounds.get("pm1"),
+        ),
+        "pm2": Normal1DSplineMixtureVariable(
+            param_priors={
+                "w": dist.Uniform(0, 1).expand((pm2_knots.size,)),
+                "mean1": dist.Uniform(-5, 5).expand((pm2_knots.size,)),
+                "mean2": dist.Uniform(-5, 5).expand((pm2_knots.size,)),
+                "ln_std1": dist.Uniform(-5, 5).expand((pm2_knots.size,)),
+                "ln_std2": dist.Uniform(-5, 5).expand((pm2_knots.size,)),
+            },
+            knots=pm2_knots,
+            spline_ks={"w": 1},
+            coord_bounds=GD1Base.coord_bounds.get("pm2"),
+        ),
     }
-    param_bounds = {
-        "ln_n0": (-5, 8),
-        "phi2": {},
-        "pm1": {
-            "z": (-8, 8),
-            "mean1": (-5, 20),
-            "ln_std1": (-1, 5),
-            "mean2": (-5, 20),
-            "ln_std2": (-1, 5),
-        },
-        "pm2": {
-            "z": (-8, 8),
-            "mean1": (-8, 8),
-            "ln_std1": (-1, 5),
-            "mean2": (-8, 8),
-            "ln_std2": (-1, 5),
-        },
+
+    data_required = {
+        "pm1": {"x": "phi1", "y": "pm1", "y_err": "pm1_err"},
+        "pm2": {"x": "phi1", "y": "pm2", "y_err": "pm2_err"},
     }
 
-    spline_ks = {"pm1": {"z": 1}, "pm2": {"z": 1}}
 
-    # Can probably use a lower resolution grid here?
-    integration_grid_phi1 = jnp.arange(phi1_lim[0], phi1_lim[1] + 1e-3, 0.1)
-
-    @classmethod
-    def setup_numpyro(cls, data=None):
-        pars = {}
-
-        # ln_n0 : linear density
-        pars["ln_n0"] = numpyro.sample(
-            f"ln_n0_{cls.name}",
-            dist.Uniform(*cls.param_bounds["ln_n0"]),
-            sample_shape=(len(cls.knots["ln_n0"]),),
-        )
-
-        # proper motions:
-        for coord_name in ["pm1", "pm2"]:
-            if coord_name not in cls.coord_names:
-                continue
-
-            pars[coord_name] = {}
-
-            par_name = "z"
-            pars[coord_name][par_name] = numpyro.sample(
-                f"{coord_name}_{par_name}_{cls.name}",
-                CustomTruncatedNormal(
-                    loc=0.0,
-                    scale=2,
-                    low=cls.param_bounds[coord_name][par_name][0],
-                    high=cls.param_bounds[coord_name][par_name][1],
-                ),
-                sample_shape=(len(cls.knots[coord_name]),),
-            )
-            for par_name in ["mean1", "ln_std1", "mean2", "ln_std2"]:
-                pars[coord_name][par_name] = numpyro.sample(
-                    f"{coord_name}_{par_name}_{cls.name}",
-                    dist.Uniform(*cls.param_bounds[coord_name][par_name]),
-                    sample_shape=(len(cls.knots[coord_name]),),
-                )
-
-        return cls(pars=pars, data=data)
-
-    def get_dists(self, data):
-        dists = {}
-
-        if "phi2" in self.coord_names:
-            dists["phi2"] = dist.Uniform(-7, jnp.full(len(data["phi1"]), 5))
-
-        if "pm1" in self.coord_names:
-            dists["pm1"] = two_truncated_normal_mixture(
-                w=z_to_w(self.splines["pm1"]["z"](data["phi1"])),
-                mean1=self.splines["pm1"]["mean1"](data["phi1"]),
-                mean2=self.splines["pm1"]["mean2"](data["phi1"]),
-                ln_std1=self.splines["pm1"]["ln_std1"](data["phi1"]),
-                ln_std2=self.splines["pm1"]["ln_std2"](data["phi1"]),
-                low=self.coord_bounds["pm1"][0],
-                high=self.coord_bounds["pm1"][1],
-                yerr=data["pm1_err"],
-            )
-
-        if "pm2" in self.coord_names:
-            dists["pm2"] = two_normal_mixture(
-                w=z_to_w(self.splines["pm2"]["z"](data["phi1"])),
-                mean1=self.splines["pm2"]["mean1"](data["phi1"]),
-                mean2=self.splines["pm2"]["mean2"](data["phi1"]),
-                ln_std1=self.splines["pm2"]["ln_std1"](data["phi1"]),
-                ln_std2=self.splines["pm2"]["ln_std2"](data["phi1"]),
-                yerr=data["pm2_err"],
-            )
-
-        return dists
-
-    def extra_ln_prior(self):
-        lp = 0.0
-
-        lp += (
-            dist.Normal(0, 0.5)
-            .log_prob(self.splines["ln_n0"]._y[1:] - self.splines["ln_n0"]._y[:-1])
-            .sum()
-        )
-
-        std_map = {"mean": 0.5, "ln_std": 0.1, "_z_": 0.5}
-        for coord_name in self.coord_names:
-            if coord_name not in self.splines:
-                continue
-
-            for par_name in self.splines[coord_name]:
-                for check in ["mean", "ln_std", "_z_"]:
-                    if check in par_name:
-                        std = std_map[check]
-                        break
-                else:
-                    std = 1.0
-
-                spl_y = self.splines[coord_name][par_name]._y
-                lp += dist.Normal(0, std).log_prob(spl_y[1:] - spl_y[:-1]).sum()
-
-        return lp
-
-
-class GD1StreamModel(GD1ComponentBase, SplineDensityModelBase):
+class GD1StreamModel(GD1Base, StreamModel):
     name = "stream"
 
-    knots = {
-        "ln_n0": _get_knots(*phi1_lim, 4.0),
-        "phi2": _get_knots(*phi1_lim, 6.0),
-        "pm1": _get_knots(*phi1_lim, 10.0),
-        "pm2": _get_knots(*phi1_lim, 10.0),
-    }
+    ln_N_dist = dist.Uniform(5, 15)
 
-    param_bounds = {
-        "ln_n0": (-5, 8),
-        "phi2": {"mean": GD1ComponentBase.coord_bounds["phi2"], "ln_std": (-2, 0.5)},
-        "pm1": {
-            "mean": GD1ComponentBase.coord_bounds["pm1"],
-            "ln_std": (-5, -0.75),
-        },  # 20 km/s
-        "pm2": {"mean": (-5, 5), "ln_std": (-5, -0.75)},
-    }
+    phi1_dens_step = 4.0  # knots every 4º
+    phi1_locs = get_grid(*phi1_lim, phi1_dens_step, pad_num=1).reshape(-1, 1)
 
-    integration_grid_phi1 = jnp.arange(phi1_lim[0], phi1_lim[1] + 1e-3, 0.2)
+    phi2_knots = get_grid(*phi1_lim, 5.0)  # knots every 5º
 
-    @classmethod
-    def setup_numpyro(cls, data=None):
-        pars = {}
+    pm1_knots = get_grid(*phi1_lim, 15.0)  # knots every 15º
+    pm2_knots = get_grid(*phi1_lim, 25.0)  # knots every 25º
 
-        # ln_n0 : linear density
-        pars["ln_n0"] = numpyro.sample(
-            f"ln_n0_{cls.name}",
-            dist.Uniform(*cls.param_bounds["ln_n0"]),
-            sample_shape=(len(cls.knots["ln_n0"]),),
-        )
-
-        # Other coordinates:
-        for coord_name in cls.coord_names:
-            pars[coord_name] = {}
-            for par_name in ["mean", "ln_std"]:
-                pars[coord_name][par_name] = numpyro.sample(
-                    f"{coord_name}_{par_name}_{cls.name}",
-                    dist.Uniform(*cls.param_bounds[coord_name][par_name]),
-                    sample_shape=(len(cls.knots[coord_name]),),
+    variables = {
+        "phi1": GridGMMVariable(
+            param_priors={
+                "zs": dist.Uniform(
+                    jnp.full(phi1_locs.shape[0] - 1, -8),
+                    jnp.full(phi1_locs.shape[0] - 1, 8),
                 )
+            },
+            locs=phi1_locs,
+            scales=np.full_like(phi1_locs, phi1_dens_step),
+            coord_bounds=phi1_lim,
+        ),
+        "phi2": Normal1DSplineVariable(
+            param_priors={
+                "mean": dist.Uniform(
+                    jnp.full_like(phi2_knots, -4.0), jnp.full_like(phi2_knots, 1.0)
+                ),
+                "ln_std": dist.Uniform(
+                    jnp.full_like(phi2_knots, -2.0), jnp.full_like(phi2_knots, 0.5)
+                ),
+            },
+            knots=phi2_knots,
+            coord_bounds=GD1Base.coord_bounds["phi2"],
+        ),
+        "pm1": Normal1DSplineVariable(
+            param_priors={
+                "mean": dist.Uniform(*GD1Base.coord_bounds.get("pm1")).expand(
+                    pm1_knots.shape
+                ),
+                "ln_std": dist.Uniform(-5, -0.75).expand(pm1_knots.shape),  # ~20 km/s
+            },
+            knots=pm1_knots,
+            coord_bounds=GD1Base.coord_bounds.get("pm1"),
+        ),
+        "pm2": Normal1DSplineVariable(
+            param_priors={
+                "mean": dist.Uniform(-5, 5).expand(pm2_knots.shape),
+                "ln_std": dist.Uniform(-5, -0.75).expand(pm2_knots.shape),  # ~20 km/s
+            },
+            knots=pm2_knots,
+        ),
+    }
+    data_required = {
+        "phi2": {"x": "phi1", "y": "phi2"},
+        "pm1": {"x": "phi1", "y": "pm1", "y_err": "pm1_err"},
+        "pm2": {"x": "phi1", "y": "pm2", "y_err": "pm2_err"},
+    }
 
-        return cls(pars=pars, data=data)
 
-    def get_dists(self, data):
-        dists = {}
-        dists["ln_n0"] = self.splines["ln_n0"]
-        if "phi2" in self.coord_names:
-            # dists["phi2"] = CustomTruncatedNormal(
-            dists["phi2"] = dist.TruncatedNormal(
-                loc=self.splines["phi2"]["mean"](data["phi1"]),
-                scale=jnp.exp(self.splines["phi2"]["ln_std"](data["phi1"])),
-                low=self.coord_bounds["phi2"][0],
-                high=self.coord_bounds["phi2"][1],
-            )
-        if "pm1" in self.coord_names:
-            # dists["pm1"] = CustomTruncatedNormal(
-            dists["pm1"] = dist.TruncatedNormal(
-                loc=self.splines["pm1"]["mean"](data["phi1"]),
-                scale=jnp.exp(self.splines["pm1"]["ln_std"](data["phi1"])),
-                low=self.coord_bounds["pm1"][0],
-                high=self.coord_bounds["pm1"][1],
-            )
-        if "pm2" in self.coord_names:
-            dists["pm2"] = dist.Normal(
-                loc=self.splines["pm2"]["mean"](data["phi1"]),
-                scale=jnp.exp(self.splines["pm2"]["ln_std"](data["phi1"])),
-            )
-        return dists
+class GD1OffTrackModel(GD1Base, StreamModel):
+    name = "offtrack"
 
-    def extra_ln_prior(self):
-        lp = 0.0
+    ln_N_dist = dist.Uniform(-5, 10)
 
-        lp += (
-            dist.Normal(0, 0.25)
-            .log_prob(self.splines["ln_n0"]._y[1:] - self.splines["ln_n0"]._y[:-1])
-            .sum()
+    dens_phi1_lim = (-60, 0)
+    dens_phi2_lim = (-3, 3)
+
+    dens_steps = [2.0, 0.25]
+    spar_steps = [8.0, 4.0]
+
+    dens_locs = np.stack(
+        np.meshgrid(
+            np.arange(dens_phi1_lim[0], dens_phi1_lim[1] + 1e-3, dens_steps[0]),
+            np.arange(dens_phi2_lim[0], dens_phi2_lim[1] + 1e-3, dens_steps[1]),
         )
+    ).T.reshape(-1, 2)
 
-        std_map = {"mean": 0.5, "ln_std": 0.1, "_w_": 0.1}
-        for coord_name in self.coord_names:
-            for par_name in self.splines[coord_name]:
-                for check in ["mean", "ln_std", "_w_"]:
-                    if check in par_name:
-                        std = std_map[check]
-                        break
-                else:
-                    std = 1.0
+    spar_locs = np.stack(
+        np.meshgrid(
+            get_grid(*GD1Base.coord_bounds["phi1"], spar_steps[0], pad_num=1),
+            get_grid(*GD1Base.coord_bounds["phi2"], spar_steps[1], pad_num=1),
+        )
+    ).T.reshape(-1, 2)
+    _mask = (
+        (spar_locs[:, 0] >= dens_phi1_lim[0])
+        & (spar_locs[:, 0] <= dens_phi1_lim[1])
+        & (spar_locs[:, 1] >= dens_phi2_lim[0])
+        & (spar_locs[:, 1] <= dens_phi2_lim[1])
+    )
+    spar_locs = spar_locs[~_mask]
 
-                spl_y = self.splines[coord_name][par_name]._y
-                lp += dist.Normal(0, std).log_prob(spl_y[1:] - spl_y[:-1]).sum()
+    phi12_locs = np.concatenate((dens_locs, spar_locs))
+    phi12_scales = np.concatenate(
+        (np.full_like(dens_locs, dens_steps[0]), np.full_like(spar_locs, spar_steps[0]))
+    )
+    phi12_scales[: dens_locs.shape[0], 1] = dens_steps[1]
+    phi12_scales[dens_locs.shape[0] :, 1] = spar_steps[1]
 
-        return lp
+    variables = {
+        ("phi1", "phi2"): GridGMMVariable(
+            param_priors={
+                "zs": dist.Uniform(-8.0, 8.0).expand((phi12_locs.shape[0] - 1,))
+                #                 "zs": dist.TruncatedNormal(
+                #                     loc=-8, scale=4.0, low=-8.0, high=8.0
+                #                 ).expand((phi12_locs.shape[0] - 1,))
+            },
+            locs=phi12_locs,
+            scales=phi12_scales,
+            coord_bounds=(
+                np.array(
+                    [GD1Base.coord_bounds["phi1"][0], GD1Base.coord_bounds["phi2"][0]]
+                ),
+                np.array(
+                    [GD1Base.coord_bounds["phi1"][1], GD1Base.coord_bounds["phi2"][1]]
+                ),
+            ),
+        ),
+        "pm1": GD1StreamModel.variables["pm1"],
+        "pm2": GD1StreamModel.variables["pm2"],
+    }
+
+    data_required = {
+        ("phi1", "phi2"): {"y": ("phi1", "phi2")},
+        "pm1": {"x": "phi1", "y": "pm1", "y_err": "pm1_err"},
+        "pm2": {"x": "phi1", "y": "pm2", "y_err": "pm2_err"},
+    }
