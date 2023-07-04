@@ -86,7 +86,7 @@ class GD1StreamModel(GD1Base, StreamModel):
     phi1_dens_step = 4.0  # knots every 4º
     phi1_locs = get_grid(*phi1_lim, phi1_dens_step, pad_num=1).reshape(-1, 1)
 
-    phi2_knots = get_grid(*phi1_lim, 5.0)  # knots every 5º
+    phi2_knots = get_grid(*phi1_lim, 8.0)  # knots every 8º
 
     pm1_knots = get_grid(*phi1_lim, 15.0)  # knots every 15º
     pm2_knots = get_grid(*phi1_lim, 25.0)  # knots every 25º
@@ -138,6 +138,22 @@ class GD1StreamModel(GD1Base, StreamModel):
         "pm1": {"x": "phi1", "y": "pm1", "y_err": "pm1_err"},
         "pm2": {"x": "phi1", "y": "pm2", "y_err": "pm2_err"},
     }
+
+    def extra_ln_prior(self, params):
+        lp = 0.0
+
+        std_map = {"mean": 0.5, "ln_std": 0.25}
+        for var_name, var in self.variables.items():
+            if hasattr(var, "splines"):
+                for par_name, spl_y in params[var_name].items():
+                    if par_name in std_map:
+                        lp += (
+                            dist.Normal(0, std_map[par_name])
+                            .log_prob(spl_y[1:] - spl_y[:-1])
+                            .sum()
+                        )
+
+        return lp
 
 
 class GD1OffTrackModel(GD1Base, StreamModel):
