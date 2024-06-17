@@ -256,4 +256,3 @@ if __name__ == '__main__':
 
     with open('/Users/Tavangar/Work/gd1-dr3/data/full_model_opt_params_{}_sep.pkl'.format(sep), 'wb') as output_file:
         pickle.dump(full_mix_opt_pars, output_file)
-

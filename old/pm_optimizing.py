@@ -256,21 +256,3 @@ ax2.scatter(high_memb_prob_pm.g_0 - high_memb_prob_pm.i_0, high_memb_prob_pm.g_0
 ax2.set_ylim(7, -1)
 ax2.set_xlim(-0.5, 1.2)
 ax2.set_title('PM fit only')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
