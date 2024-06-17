@@ -42,7 +42,7 @@ spline_pm2 = InterpolatedUnivariateSpline(phi1_stream_pm_model[::10], stream_pm2
 
 est_track = np.load('../data/gd1_track.npy')
 n = len(est_track)
-spline_phi2 = UnivariateSpline(phi1_stream_pm_model.reshape(est_track.shape)[::10], 
+spline_phi2 = UnivariateSpline(phi1_stream_pm_model.reshape(est_track.shape)[::10],
                                            est_track[::10])
 
 
@@ -70,7 +70,7 @@ def pre_model(g_all, g, after):
     obs_pm_all = np.stack((pm1_sorted_all.value, pm2_sorted_all.value)).T
     Cov_sorted = g_sorted_all.get_cov()[:, 3:5, 3:5]
     obs_pm_cov_all = gc.transform_pm_cov(c1, Cov_sorted, gc.GD1)
-    
+
     g_sorted = g[g.phi1.argsort()]
 
     g_sorted = g_sorted[np.isfinite(g_sorted.parallax) & (g_sorted.parallax > 0)]
@@ -79,12 +79,12 @@ def pre_model(g_all, g, after):
     stream_coord = c1.transform_to(gc.GD1)
     phi1_sorted = stream_coord.phi1.degree #only need this so we can get the indices for later
 
-    
+
     bkg_ind = searchsorted(after.phi1, phi1_sorted)
-    
+
     phi1_stream_all = phi1_sorted_all.reshape(len(phi1_sorted_all),1)
     phi2_stream_all = phi2_sorted_all.reshape(len(phi2_sorted_all),1)
-    
+
     return g_sorted_all, obs_pm_all, obs_pm_cov_all, phi1_stream_all, phi2_stream_all, bkg_ind
 
 
@@ -93,18 +93,18 @@ def pm_model_spline(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, bkg_ind,
         obs_pm = obs_pm_all[bkg_ind]
         obs_pm_cov = obs_pm_cov_all[bkg_ind]
         phi1_stream = phi1_stream_all[bkg_ind]
-        
+
         pm_knots = np.linspace(-101, 21, n_pm_nodes)
         B_pm_all = dmatrix(
             "bs(x, knots=knots, degree=3, include_intercept=True) - 1",
             {"x": phi1_stream_all, "knots": pm_knots[1:-1]},)
         B_pm_all = np.asarray(B_pm_all)
-        
+
         B_pm = dmatrix(
             "bs(x, knots=knots, degree=3, include_intercept=True) - 1",
             {"x": phi1_stream, "knots": pm_knots[1:-1]},)
         B_pm = np.asarray(B_pm)
-        
+
         est_pm1_nodes = spline_pm1(np.linspace(-101, 21, n_pm_nodes+2))
         est_pm2_nodes = spline_pm2(np.linspace(-101, 21, n_pm_nodes+2))
         lower_pm1_bounds = est_pm1_nodes - 3
@@ -114,42 +114,42 @@ def pm_model_spline(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, bkg_ind,
         lower_pm = np.vstack([lower_pm1_bounds, lower_pm2_bounds]).T
         upper_pm = np.vstack([upper_pm1_bounds, upper_pm2_bounds]).T
         est_pm_nodes = np.vstack([est_pm1_nodes, est_pm2_nodes]).T
-        
+
         pm_nodes = pm.Uniform('pm_nodes', lower=lower_pm, upper=upper_pm, shape = (B_pm.shape[1], 2))
-        
+
         mean_pm_stream_all = pm.Deterministic('mean_pm_stream_all', tt.dot(B_pm_all, pm_nodes))
         mean_pm_stream = pm.Deterministic('mean_pm_stream', tt.dot(B_pm, pm_nodes))
-        
-        
+
+
         ln_std_pm_stream = pm.Uniform('ln_std_pm_stream', lower=[-4, -4], upper = [0,0], shape=2)
         std_pm_stream = tt.exp(ln_std_pm_stream)
         cov_pm_stream = tt.diag(std_pm_stream**2)
         full_cov_all = obs_pm_cov_all + cov_pm_stream
         full_cov = obs_pm_cov + cov_pm_stream
-        
+
         #Determinant calculation
         a, a_all = full_cov[:, 0, 0], full_cov_all[:, 0, 0]
         b = c = full_cov[:, 0, 1]
         b_all = c_all = full_cov_all[:, 0, 1]
         d, d_all = full_cov[:, 1, 1], full_cov_all[:, 1, 1]
         det, det_all = a * d - b * c, a_all*d_all - b_all*c_all
-        
+
         diff = obs_pm - mean_pm_stream
         diff_all = obs_pm_all - mean_pm_stream_all
         numer = (
-            d * diff[:, 0] ** 2 
+            d * diff[:, 0] ** 2
             + a * diff[:, 1] ** 2
             - (b + c) * diff[:, 0] * diff[:, 1]
         )
         numer_all = (
-            d_all * diff_all[:, 0] ** 2 
+            d_all * diff_all[:, 0] ** 2
             + a_all * diff_all[:, 1] ** 2
             - (b_all + c_all) * diff_all[:, 0] * diff_all[:, 1]
         )
         quad, quad_all = numer / det, numer_all / det_all
         loglike_fg = -0.5 * (quad + tt.log(det) + 2 * tt.log(2*np.pi))
         loglike_fg_all = -0.5 * (quad_all + tt.log(det_all) + 2 * tt.log(2*np.pi)) # same
-        
+
     return loglike_fg, loglike_fg_all
 
 
@@ -157,28 +157,28 @@ def phi2_model_spline(model, phi1_stream_all, phi2_stream_all, bkg_ind, n_track_
     with model:
         phi1_stream = phi1_stream_all[bkg_ind]
         phi2_stream = phi2_stream_all[bkg_ind]
-        
+
         track_knots = np.linspace(-101, 21, n_track_nodes)
         B_track_all = dmatrix(
             "bs(x, knots=knots, degree=3, include_intercept=True) - 1",
             {"x": phi1_stream_all, "knots": track_knots[1:-1]},)
         B_track_all = np.asarray(B_track_all)
-        
+
         B_track = dmatrix(
             "bs(x, knots=knots, degree=3, include_intercept=True) - 1",
             {"x": phi1_stream, "knots": track_knots[1:-1]},)
         B_track = np.asarray(B_track)
-        
+
         est_phi2_nodes = spline_phi2(np.linspace(-101, 21, n_track_nodes+2))
         lower_phi2 = est_phi2_nodes - 3
         upper_phi2 = est_phi2_nodes + 3
-        
-        track_nodes = pm.Uniform('track_nodes', lower=lower_phi2, upper=upper_phi2, 
+
+        track_nodes = pm.Uniform('track_nodes', lower=lower_phi2, upper=upper_phi2,
                                    shape = B_track.shape[1])
-        
+
         mean_phi2_stream_all = pm.Deterministic('mean_phi2_stream_all', tt.dot(B_track_all, track_nodes))
         mean_phi2_stream_all = mean_phi2_stream_all.reshape(phi2_stream_all.shape)
-        
+
         mean_phi2_stream = pm.Deterministic('mean_phi2_stream', tt.dot(B_track, track_nodes))
         mean_phi2_stream = mean_phi2_stream.reshape(phi2_stream.shape)
 
@@ -188,21 +188,21 @@ def phi2_model_spline(model, phi1_stream_all, phi2_stream_all, bkg_ind, n_track_
             "bs(x, knots=knots, degree=3, include_intercept=True) - 1",
             {"x": phi1_stream_all, "knots": width_knots[1:-1]},)
         B_width_all = np.asarray(B_width_all)
-        
+
         B_width = dmatrix(
             "bs(x, knots=knots, degree=3, include_intercept=True) - 1",
             {"x": phi1_stream, "knots": width_knots[1:-1]},)
         B_width = np.asarray(B_width)
-        
+
         width_nodes_init = 0.25+np.zeros(n_width_nodes+2)
-        
-        width_nodes = pm.Uniform('width_nodes', lower=0.1, upper=1, 
+
+        width_nodes = pm.Uniform('width_nodes', lower=0.1, upper=1,
                                    shape = B_width.shape[1], testval=width_nodes_init)
-        
+
         std_phi2_stream_all = pm.Deterministic('std_phi2_stream_all', tt.dot(B_width_all, width_nodes))
         var_phi2_stream_all = std_phi2_stream_all**2
         var_phi2_stream_all = var_phi2_stream_all.reshape(mean_phi2_stream_all.shape)
-        
+
         std_phi2_stream = pm.Deterministic('std_phi2_stream', tt.dot(B_width, width_nodes))
         var_phi2_stream = std_phi2_stream**2
         var_phi2_stream = var_phi2_stream.reshape(mean_phi2_stream.shape)
@@ -210,49 +210,49 @@ def phi2_model_spline(model, phi1_stream_all, phi2_stream_all, bkg_ind, n_track_
         #NEW
         diff_phi2_all = phi2_stream_all - mean_phi2_stream_all
         loglike_fg_phi2_all = -0.5 * (tt.log(var_phi2_stream_all) + ((diff_phi2_all**2)/var_phi2_stream_all) + tt.log(2*np.pi))
-        
+
         diff_phi2 = phi2_stream - mean_phi2_stream
         loglike_fg_phi2 = -0.5 * (tt.log(var_phi2_stream) + ((diff_phi2**2)/var_phi2_stream) + tt.log(2*np.pi))
-        
+
     return loglike_fg_phi2, loglike_fg_phi2_all
 
 def spur_model(model, phi1_stream_all, phi2_stream_all, bkg_ind):
     phi1_stream = phi1_stream_all[bkg_ind]
     phi2_stream = phi2_stream_all[bkg_ind]
-    
+
     # track for the spur as well:
     spur_sel_all = np.where((phi1_stream_all > -43) & (phi1_stream_all < -25))[0]
     phi1_spur_all, phi2_spur_all = phi1_stream_all[spur_sel_all], phi2_stream_all[spur_sel_all]
     left_all = phi1_stream_all[np.where((phi1_stream_all < -43) & (phi1_stream_all > -101))[0]]
     right_all = phi1_stream_all[np.where((phi1_stream_all > -25) & (phi1_stream_all < 21))[0]]
-    
+
     spur_sel = np.where((phi1_stream > -43) & (phi1_stream < -25))[0]
     phi1_spur, phi2_spur = phi1_stream[spur_sel], phi2_stream[spur_sel]
     left = phi1_stream[np.where((phi1_stream < -43) & (phi1_stream > -101))[0]]
     right = phi1_stream[np.where((phi1_stream > -25) & (phi1_stream < 21))[0]]
-    
+
     left_all = -np.inf*tt.exp(np.ones(left_all.shape))
     right_all = -np.inf*tt.exp(np.ones(right_all.shape))
-    
+
     left = -np.inf*tt.exp(np.ones(left.shape))
     right = -np.inf*tt.exp(np.ones(right.shape))
-    
+
     b4 = pm.Uniform('spur_track_scale', lower=0.2, upper=1)
-    
+
     mean_spur_track_all = pm.Deterministic('mean_spur_track_all', b4*tt.sqrt(phi1_spur_all + 43))
     mean_spur_track = pm.Deterministic('mean_spur_track', b4*tt.sqrt(phi1_spur + 43))
-    
+
     std_phi2_spur = pm.Uniform('std_phi2_spur', lower=0, upper=1, testval = 0.15)
     var_phi2_spur = std_phi2_spur**2
-    
+
     diff_spur_all = phi2_spur_all - mean_spur_track_all
     loglike_fg_spur_i_all = -0.5 * (tt.log(var_phi2_spur) + ((diff_spur_all**2)/var_phi2_spur) + tt.log(2*np.pi))
     loglike_fg_spur_all = tt.concatenate([left_all, loglike_fg_spur_i_all, right_all])
-    
+
     diff_spur = phi2_spur - mean_spur_track
     loglike_fg_spur_i = -0.5 * (tt.log(var_phi2_spur) + ((diff_spur**2)/var_phi2_spur) + tt.log(2*np.pi))
     loglike_fg_spur = tt.concatenate([left, loglike_fg_spur_i, right])
-    
+
     return loglike_fg_spur, loglike_fg_spur_all
 
 
@@ -261,14 +261,14 @@ def pm_model_spline_sample(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, b
         obs_pm = obs_pm_all[bkg_ind]
         obs_pm_cov = obs_pm_cov_all[bkg_ind]
         phi1_stream = phi1_stream_all[bkg_ind]
-        
+
         pm_knots = np.linspace(-101, 21, n_pm_nodes)
-        
+
         B_pm = dmatrix(
             "bs(x, knots=knots, degree=3, include_intercept=True) - 1",
             {"x": phi1_stream, "knots": pm_knots[1:-1]},)
         B_pm = np.asarray(B_pm)
-        
+
         est_pm1_nodes = spline_pm1(np.linspace(-101, 21, n_pm_nodes+2))
         est_pm2_nodes = spline_pm2(np.linspace(-101, 21, n_pm_nodes+2))
         lower_pm1_bounds = est_pm1_nodes - 3
@@ -278,105 +278,105 @@ def pm_model_spline_sample(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, b
         lower_pm = np.vstack([lower_pm1_bounds, lower_pm2_bounds]).T
         upper_pm = np.vstack([upper_pm1_bounds, upper_pm2_bounds]).T
         est_pm_nodes = np.vstack([est_pm1_nodes, est_pm2_nodes]).T
-        
+
         pm_nodes = pm.Uniform('pm_nodes', lower=lower_pm, upper=upper_pm, shape = (B_pm.shape[1], 2))
-        
+
         mean_pm_stream = pm.Deterministic('mean_pm_stream', tt.dot(B_pm, pm_nodes))
-        
-        
+
+
         ln_std_pm_stream = pm.Uniform('ln_std_pm_stream', lower=[-4, -4], upper = [0,0], shape=2)
         std_pm_stream = tt.exp(ln_std_pm_stream)
         cov_pm_stream = tt.diag(std_pm_stream**2)
         full_cov = obs_pm_cov + cov_pm_stream
-        
+
         #Determinant calculation
         a = full_cov[:, 0, 0]
         b = c = full_cov[:, 0, 1]
         d = full_cov[:, 1, 1]
         det = a * d - b * c
-        
+
         diff = obs_pm - mean_pm_stream
         numer = (
-            d * diff[:, 0] ** 2 
+            d * diff[:, 0] ** 2
             + a * diff[:, 1] ** 2
             - (b + c) * diff[:, 0] * diff[:, 1]
         )
-        
+
         quad = numer / det
         loglike_fg = -0.5 * (quad + tt.log(det) + 2 * tt.log(2*np.pi))
-        
+
     return loglike_fg
 
 def phi2_model_spline_sample(model, phi1_stream_all, phi2_stream_all, bkg_ind, n_track_nodes, n_width_nodes):
     with model:
         phi1_stream = phi1_stream_all[bkg_ind]
         phi2_stream = phi2_stream_all[bkg_ind]
-        
+
         track_knots = np.linspace(-101, 21, n_track_nodes)
-        
+
         B_track = dmatrix(
             "bs(x, knots=knots, degree=3, include_intercept=True) - 1",
             {"x": phi1_stream, "knots": track_knots[1:-1]},)
         B_track = np.asarray(B_track)
-        
+
         est_phi2_nodes = spline_phi2(np.linspace(-101, 21, n_track_nodes+2))
         lower_phi2 = est_phi2_nodes - 3
         upper_phi2 = est_phi2_nodes + 3
-        
-        track_nodes = pm.Uniform('track_nodes', lower=lower_phi2, upper=upper_phi2, 
+
+        track_nodes = pm.Uniform('track_nodes', lower=lower_phi2, upper=upper_phi2,
                                    shape = B_track.shape[1])
-        
+
         mean_phi2_stream = pm.Deterministic('mean_phi2_stream', tt.dot(B_track, track_nodes))
         mean_phi2_stream = mean_phi2_stream.reshape(phi2_stream.shape)
 
         # add a component that gets the width of the stream as a function of phi1
         width_knots = np.linspace(-101, 21, n_width_nodes)
-        
+
         B_width = dmatrix(
             "bs(x, knots=knots, degree=3, include_intercept=True) - 1",
             {"x": phi1_stream, "knots": width_knots[1:-1]},)
         B_width = np.asarray(B_width)
-        
+
         width_nodes_init = 0.25+np.zeros(n_width_nodes+2)
-        
-        width_nodes = pm.Uniform('width_nodes', lower=0.1, upper=1, 
+
+        width_nodes = pm.Uniform('width_nodes', lower=0.1, upper=1,
                                    shape = B_width.shape[1], testval=width_nodes_init)
-        
+
         std_phi2_stream = pm.Deterministic('std_phi2_stream', tt.dot(B_width, width_nodes))
         var_phi2_stream = std_phi2_stream**2
         var_phi2_stream = var_phi2_stream.reshape(mean_phi2_stream.shape)
 
         diff_phi2 = phi2_stream - mean_phi2_stream
         loglike_fg_phi2 = -0.5 * (tt.log(var_phi2_stream) + ((diff_phi2**2)/var_phi2_stream) + tt.log(2*np.pi))
-        
+
     return loglike_fg_phi2
 
 def spur_model_sample(model, phi1_stream_all, phi2_stream_all, bkg_ind):
     phi1_stream = phi1_stream_all[bkg_ind]
     phi2_stream = phi2_stream_all[bkg_ind]
-    
+
     # track for the spur as well:
-    
+
     spur_sel = np.where((phi1_stream > -43) & (phi1_stream < -25))[0]
     phi1_spur, phi2_spur = phi1_stream[spur_sel], phi2_stream[spur_sel]
     left = phi1_stream[np.where((phi1_stream < -43) & (phi1_stream > -101))[0]]
     right = phi1_stream[np.where((phi1_stream > -25) & (phi1_stream < 21))[0]]
-    
+
     left = -np.inf*tt.exp(np.ones(left.shape))
     right = -np.inf*tt.exp(np.ones(right.shape))
-    
+
     b4 = pm.Uniform('spur_track_scale', lower=0.2, upper=1)
-    
+
     mean_spur_track = pm.Deterministic('mean_spur_track', b4*tt.sqrt(phi1_spur + 43))
-    
+
     std_phi2_spur = pm.Uniform('std_phi2_spur', lower=0, upper=1, testval = 0.15)
     var_phi2_spur = std_phi2_spur**2
-    
-    
+
+
     diff_spur = phi2_spur - mean_spur_track
     loglike_fg_spur_i = -0.5 * (tt.log(var_phi2_spur) + ((diff_spur**2)/var_phi2_spur) + tt.log(2*np.pi))
     loglike_fg_spur = tt.concatenate([left, loglike_fg_spur_i, right])
-    
+
     return loglike_fg_spur
 
 def short_pm_model_spur(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, bkg_ind):
@@ -384,57 +384,57 @@ def short_pm_model_spur(model, obs_pm_all, obs_pm_cov_all, phi1_stream_all, bkg_
         obs_pm = obs_pm_all[bkg_ind]
         obs_pm_cov = obs_pm_cov_all[bkg_ind]
         phi1_stream = phi1_stream_all[bkg_ind]
-        
+
         mean_pm_stream = pm.Uniform('mean_pm_stream', lower = [-15, -4], upper = [-11, -1], shape = 2)
-        
+
         ln_std_pm_stream = pm.Uniform('ln_std_pm_stream', lower=[-4, -4], upper = [0,0], shape=2, testval = [-3, -3])
         std_pm_stream = tt.exp(ln_std_pm_stream)
         cov_pm_stream = tt.diag(std_pm_stream**2)
         full_cov_all = obs_pm_cov_all + cov_pm_stream
         full_cov = obs_pm_cov + cov_pm_stream
-        
+
         #Determinant calculation
         a, a_all = full_cov[:, 0, 0], full_cov_all[:, 0, 0]
         b = c = full_cov[:, 0, 1]
         b_all = c_all = full_cov_all[:, 0, 1]
         d, d_all = full_cov[:, 1, 1], full_cov_all[:, 1, 1]
         det, det_all = a * d - b * c, a_all*d_all - b_all*c_all
-        
+
         diff = obs_pm - mean_pm_stream
         diff_all = obs_pm_all - mean_pm_stream
         numer = (
-            d * diff[:, 0] ** 2 
+            d * diff[:, 0] ** 2
             + a * diff[:, 1] ** 2
             - (b + c) * diff[:, 0] * diff[:, 1]
         )
         numer_all = (
-            d_all * diff_all[:, 0] ** 2 
+            d_all * diff_all[:, 0] ** 2
             + a_all * diff_all[:, 1] ** 2
             - (b_all + c_all) * diff_all[:, 0] * diff_all[:, 1]
         )
         quad, quad_all = numer / det, numer_all / det_all
-        
+
         loglike_fg = -0.5 * (quad + tt.log(det) + 2 * tt.log(2*np.pi))
         loglike_fg_all = -0.5 * (quad_all + tt.log(det_all) + 2 * tt.log(2*np.pi))
-        
+
     return loglike_fg, loglike_fg_all
 
 def short_phi2_model_spur(model, phi1_stream_all, phi2_stream_all, bkg_ind):
     with model:
         phi1_stream = phi1_stream_all[bkg_ind]
         phi2_stream = phi2_stream_all[bkg_ind]
-        
+
         mean_phi2_stream = pm.Uniform('mean_phi2_stream', lower = -0.5, upper = 0.5)
-        
+
         std_phi2_stream = pm.Uniform('std_phi2_stream', lower = 0, upper = 0.5, testval = 0.2)
         var_phi2_stream = std_phi2_stream**2
 
         diff_phi2_all = phi2_stream_all - mean_phi2_stream
         loglike_fg_phi2_all = -0.5 * (tt.log(var_phi2_stream) + ((diff_phi2_all**2)/var_phi2_stream) + tt.log(2*np.pi))
-        
+
         diff_phi2 = phi2_stream - mean_phi2_stream
         loglike_fg_phi2 = -0.5 * (tt.log(var_phi2_stream) + ((diff_phi2**2)/var_phi2_stream) + tt.log(2*np.pi))
-        
+
     return loglike_fg_phi2, loglike_fg_phi2_all
 
 def short_spur_model(model, phi1_stream_all, phi2_stream_all, obs_pm_all, obs_pm_cov_all, bkg_ind):
@@ -442,29 +442,29 @@ def short_spur_model(model, phi1_stream_all, phi2_stream_all, obs_pm_all, obs_pm
     phi2_stream = phi2_stream_all[bkg_ind]
     obs_pm = obs_pm_all[bkg_ind]
     obs_pm_cov = obs_pm_cov_all[bkg_ind]
-    
+
     # track for the spur as well:
-    
+
     spur_sel = np.where((phi1_stream > -40) & (phi1_stream < -27))[0]
     phi1_spur, phi2_spur = phi1_stream[spur_sel], phi2_stream[spur_sel]
     left_phi2 = phi1_stream[np.where((phi1_stream < -40) & (phi1_stream > -51))[0]]
     right_phi2 = phi1_stream[np.where((phi1_stream > -27) & (phi1_stream < -19))[0]]
-    
+
     left1_phi2 = -np.inf*tt.exp(np.ones(left_phi2.shape))
     right1_phi2 = -np.inf*tt.exp(np.ones(right_phi2.shape))
-     
+
     b4 = pm.Uniform('spur_track_scale', lower=0.2, upper=0.7, testval=0.45)
-    
+
     mean_spur_track = pm.Deterministic('mean_spur_track', b4*tt.sqrt(phi1_spur + 40))
-    
+
     std_phi2_spur = pm.Uniform('std_phi2_spur', lower=0, upper=0.4, testval = 0.1)
     var_phi2_spur = std_phi2_spur**2
-    
+
     diff_spur = phi2_spur - mean_spur_track
     loglike_fg_spur_i_phi2 = -0.5 * (tt.log(var_phi2_spur) + ((diff_spur**2)/var_phi2_spur) + tt.log(2*np.pi))
     loglike_fg_spur_phi2 = tt.concatenate([left1_phi2, loglike_fg_spur_i_phi2, right1_phi2])
-    
-    
+
+
     obs_pm_spur = obs_pm[spur_sel]
     obs_pm_cov_spur = obs_pm_cov[spur_sel]
 
@@ -486,12 +486,12 @@ def short_spur_model(model, phi1_stream_all, phi2_stream_all, obs_pm_all, obs_pm
     diff = obs_pm_spur - mean_pm_spur
     diff_all = obs_pm_all - mean_pm_spur
     numer = (
-        d * diff[:, 0] ** 2 
+        d * diff[:, 0] ** 2
         + a * diff[:, 1] ** 2
         - (b + c) * diff[:, 0] * diff[:, 1]
     )
     numer_all = (
-        d_all * diff_all[:, 0] ** 2 
+        d_all * diff_all[:, 0] ** 2
         + a_all * diff_all[:, 1] ** 2
         - (b_all + c_all) * diff_all[:, 0] * diff_all[:, 1]
     )
@@ -500,11 +500,11 @@ def short_spur_model(model, phi1_stream_all, phi2_stream_all, obs_pm_all, obs_pm
     loglike_fg_spur_i_pm = -0.5 * (quad + tt.log(det) + 2 * tt.log(2*np.pi))
     loglike_fg_spur_i_pm = loglike_fg_spur_i_pm.reshape(loglike_fg_spur_i_phi2.shape)
     loglike_fg_spur_pm = tt.concatenate([left1_phi2, loglike_fg_spur_i_pm, right1_phi2])
-    
+
     loglike_fg_spur = loglike_fg_spur_pm + loglike_fg_spur_phi2
-    
+
     return loglike_fg_spur
-   
+
 
 def binned_pm_model(model, obs_pm, obs_pm_cov):
     with model:
@@ -522,17 +522,17 @@ def binned_pm_model(model, obs_pm, obs_pm_cov):
 
         diff = obs_pm - mean_pm_stream[None, :]
         numer = (
-            d * diff[:, 0] ** 2 
+            d * diff[:, 0] ** 2
             + a * diff[:, 1] ** 2
             - (b + c) * diff[:, 0] * diff[:, 1]
         )
         quad = numer / det
         loglike_fg = -0.5 * (quad + tt.log(det) + 2 * tt.log(2*np.pi))
     return loglike_fg
- 
+
 def pm_model(model, obs_pm, obs_pm_cov, phi1_stream_all):
     with pm.Model() as model:
-        
+
         #take the data to be used in the model (after color cut) and separate it
         bkg_ind = searchsorted(after.phi1, phi1_stream_all)
         obs_pm = obs_pm_all[bkg_ind]
@@ -555,7 +555,7 @@ def pm_model(model, obs_pm, obs_pm_cov, phi1_stream_all):
         cov_pm_stream = std_pm_stream**2 * tt.eye(2)
         full_cov = obs_pm_cov + cov_pm_stream
         full_cov_all = obs_pm_cov_all + cov_pm_stream
-        
+
         # Assuming cov symmetric
         # this should all stay the same
         a, a_all = full_cov[:, 0, 0], full_cov_all[:, 0, 0]
@@ -563,25 +563,25 @@ def pm_model(model, obs_pm, obs_pm_cov, phi1_stream_all):
         b_all = c_all = full_cov_all[:, 0, 1]
         d, d_all = full_cov[:, 1, 1], full_cov_all[:, 1, 1]
         det, det_all = a * d - b * c, a_all*d_all - b_all*c_all
-        
+
         # this also has to become a function of phi1 for each phi1 associated with each obs_pm row
-        #  in order to 
+        #  in order to
         diff = obs_pm - mean_pm_stream
         diff_all = obs_pm_all - mean_pm_stream_all
         numer = (
-            d * diff[:, 0] ** 2 
+            d * diff[:, 0] ** 2
             + a * diff[:, 1] ** 2
             - (b + c) * diff[:, 0] * diff[:, 1]
         )
         numer_all = (
-            d_all * diff_all[:, 0] ** 2 
+            d_all * diff_all[:, 0] ** 2
             + a_all * diff_all[:, 1] ** 2
             - (b_all + c_all) * diff_all[:, 0] * diff_all[:, 1]
         )
         quad, quad_all = numer / det, numer_all / det_all
         loglike_fg = -0.5 * (quad + tt.log(det) + 2 * tt.log(2*np.pi))
         loglike_fg_all = -0.5 * (quad_all + tt.log(det_all) + 2 * tt.log(2*np.pi))
-        
+
     return loglike_fg, loglike_fg_all
 
 def phi2_model(model, phi1_stream, phi2_stream):
@@ -609,12 +609,12 @@ def phi2_model(model, phi1_stream, phi2_stream):
         diff_phi2 = phi2_stream - mean_phi2_stream
         loglike_fg_phi2 = -0.5 * (tt.log(var_phi2_stream) + ((diff_phi2**2)/var_phi2_stream) + tt.log(2*np.pi))
         loglike_fg_phi2 = loglike_fg_phi2.reshape(loglike_fg_pm.shape)
-        
+
     return loglike_fg_phi2
 
 
-    
-    
+
+
 def plot_pm_memb_prob(obs_pm, post_member_prob):
     fig, (ax1, ax2) = plt.subplots(1,2,figsize=(12, 5))
     colorbar_plot = ax1.scatter(obs_pm[:, 0], obs_pm[:, 1], c=post_member_prob, s=0.1, alpha=0.2, cmap='cool')
