@@ -74,7 +74,7 @@ if __name__ == '__main__':
         alpha = pm.Uniform('alpha', lower = 0, upper = 1, testval=5e-4)
         beta = pm.Uniform('beta', lower=0, upper = 1, testval=0.3)
 
-        loglike_fg_pm = pmf.pm_model_spline_sample(model, obs_pm_all, obs_pm_cov_all, 
+        loglike_fg_pm = pmf.pm_model_spline_sample(model, obs_pm_all, obs_pm_cov_all,
                                                                phi1_stream_all, bkg_ind, n_pm_nodes)
         ll_fg_pm = tt.log(alpha) + loglike_fg_pm
 
@@ -104,7 +104,7 @@ if __name__ == '__main__':
         #######################
         res, logp = pmx.optimize(start={'b4': 0.3,
                                     'ln_std_phi2_spur': np.log(0.1),
-                                    'beta': 0.3}, 
+                                    'beta': 0.3},
                                  return_info = True)
 
         #######################

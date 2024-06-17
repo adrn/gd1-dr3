@@ -40,7 +40,7 @@ def plot_pretty(dpi=175, fontsize=15, labelsize=15, figsize=(10, 8), tex=True):
     mpl.rcParams['xtick.labelsize'] = labelsize
     mpl.rcParams['ytick.labelsize'] = labelsize
     mpl.rcParams.update({'figure.autolayout': False})
-    
+
 plot_pretty(fontsize=20, labelsize=20)
 
 
@@ -109,16 +109,16 @@ for i in trange(len(phi1_bins)-1):
     phi1_mask = (phi1 >= l) & (phi1 < r)
     g_new = g[phi1_mask]
     control_mask = phi1_mask & sky_ctl_mask
-    
+
     X_pm_ctl = X_pm[control_mask]
     C_pm_ctl = Cov_pm[control_mask]
-    
+
     gmm = XDGMM(n_components=8, method='Bovy')
     _ = gmm.fit(X_pm_ctl, C_pm_ctl)
     scores, _ = gmm.score_samples(X_pm[phi1_mask], Cov_pm[phi1_mask])
-    
+
     gmms.append(gmm)
-    
+
     # ---
     tbl = Table()
     tbl['phi1'] = g_new['phi1']
@@ -131,27 +131,6 @@ for i in trange(len(phi1_bins)-1):
     tbl['gi_cmd_mask'] = g_new['gi_cmd_mask']
     tbl['pm_ln_bkg_prob'] = scores
     all_tbl = vstack([all_tbl, tbl])
-    
+
 sorted_table = all_tbl[all_tbl['phi1'].argsort()]
 sorted_table.write('../data/sorted_pm_member_prob_all_stars_8comp.fits', overwrite=True)
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

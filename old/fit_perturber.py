@@ -20,24 +20,24 @@ from pyia import GaiaData
 from sklearn.neighbors import KernelDensity
 
 class FitPert:
-    
+
     def __init__(self, data,data_short, mw, w0_now):
-        
+
         self.data = data
         self.data_short = data_short
         self.mw = mw
         self.w0_now = w0_now
-        
+
         rv_bonaca_data = fits.open('../data/rv_catalog.fits')[1].data
         self.gd1_rv_bonaca = rv_bonaca_data[rv_bonaca_data.pmmem & rv_bonaca_data.cmdmem & rv_bonaca_data.vrmem & rv_bonaca_data.fehmem]
         self.gd1_rv_bonaca_short = self.gd1_rv_bonaca[(self.gd1_rv_bonaca.phi1 > -43) & (self.gd1_rv_bonaca.phi1 < -25)]
-        
+
     def pre_fitting(self, vals):
-        
+
         self.b, self.psi, self.z, self.v_z, self.vpsi, self.t_int, self.logm, self.logcore = vals
-        
+
         self.core = 1.05 * (10**self.logm / (10**8))**0.5
-        
+
         ##############################################
         ## STREAM PROPERTIES AT TIME OF INTERACTION ##
         ##############################################
@@ -46,8 +46,8 @@ class FitPert:
 
         # Converting from xyz to relative-to-stream coordinates and back again
         #take the velocities of the stream particles where the pertuber will cross the stream
-        center = old_gd1[(np.abs(np.mean(old_gd1.pos.x.value) - old_gd1.pos.x.value) < 0.5) & 
-                     (np.abs(np.mean(old_gd1.pos.y.value) - old_gd1.pos.y.value) < 0.5) & 
+        center = old_gd1[(np.abs(np.mean(old_gd1.pos.x.value) - old_gd1.pos.x.value) < 0.5) &
+                     (np.abs(np.mean(old_gd1.pos.y.value) - old_gd1.pos.y.value) < 0.5) &
                      (np.abs(np.mean(old_gd1.pos.z.value) - old_gd1.pos.z.value) < 0.5)]
 
         vxstream = np.mean(center.vel.d_x).to(u.km/u.s).value
@@ -63,16 +63,16 @@ class FitPert:
         ##########################################
         ## STREAM PROPERTIES BEFORE INTERACTION ##
         ##########################################
-        w0_old_stream = gd.PhaseSpacePosition(pos=old_gd1.pos, 
+        w0_old_stream = gd.PhaseSpacePosition(pos=old_gd1.pos,
                                               vel=old_gd1.vel)
         orbit_stream = self.mw.integrate_orbit(w0_old_stream, dt=-1*u.Myr, n_steps=30)
         self.orig_stream = orbit_stream[-1]
-        self.w0_orig_stream = gd.PhaseSpacePosition(pos=self.orig_stream.pos, 
+        self.w0_orig_stream = gd.PhaseSpacePosition(pos=self.orig_stream.pos,
                                                     vel=self.orig_stream.vel)
-        
+
         self.perturber_pot = gp.HernquistPotential(m=10**self.logm*u.Msun, c=(10**self.logcore)*u.pc, units=galactic)
         #perturber_pot = gp.KeplerPotential(m=10**logm*u.Msun, units=galactic)
-        
+
         return self.site_at_impact_w0
 
 
@@ -91,7 +91,7 @@ class FitPert:
         # Get the rotation matrix to rotate from Galactocentric to cylindrical
         # impact coordinates at the impact site along the stream
         R = self.get_cyl_rotation()
-        
+
         b, psi, z, v_z, vpsi = self.b * u.pc, self.psi * u.deg, self.z * u.kpc, self.v_z * u.km/u.s, self.vpsi * u.km/u.s
 
         # Define the position of the perturber at the time of impact in the
@@ -125,7 +125,7 @@ class FitPert:
         ## PERTURBER PROPERTIES AT TIME OF INTERACTION ##
         #################################################
         w0_pert = self.get_perturber_w0_at_impact()
-        
+
         ## CHECK THAT THE PERTURBER IS BOUND TO THE MILKY WAY
         pert_energy = gp.hamiltonian.Hamiltonian(self.mw).energy(w0_pert)
         if pert_energy.value[0] > 0:
@@ -135,15 +135,15 @@ class FitPert:
             #############################################
             ## PERTURBER PROPERTIES BEFORE INTERACTION ##
             #############################################
-            orbit_pert  = self.mw.integrate_orbit(w0_pert, dt=-1*u.Myr, n_steps=30)  
-            orig_pert   = orbit_pert[-1]  
+            orbit_pert  = self.mw.integrate_orbit(w0_pert, dt=-1*u.Myr, n_steps=30)
+            orig_pert   = orbit_pert[-1]
 
             x_pert,y_pert,z_pert= orig_pert.pos.x, orig_pert.pos.y, orig_pert.pos.z
             vx_pert = orig_pert.vel.d_x.to(u.km/u.s).value
             vy_pert = orig_pert.vel.d_y.to(u.km/u.s).value
             vz_pert = orig_pert.vel.d_z.to(u.km/u.s).value
 
-            w0_orig_pert = gd.PhaseSpacePosition(pos=[x_pert, y_pert, z_pert] * u.kpc, 
+            w0_orig_pert = gd.PhaseSpacePosition(pos=[x_pert, y_pert, z_pert] * u.kpc,
                                              vel=[vx_pert, vy_pert, vz_pert]*u.km/u.s)
 
             # all potentials of the orbit (for nbody simulation)
@@ -165,7 +165,7 @@ class FitPert:
     def loglik(self, params):
         self.pre_fitting(params)
         current, orbits = self.nbody()
-                
+
         if not current:
             ll_model, ll_model_short, ll_phi2_short, ll_data, model_dens_ratio = np.nan, np.nan, np.nan, np.nan, np.nan
             pert_apo, pert_peri = np.nan, np.nan
@@ -178,36 +178,36 @@ class FitPert:
             model_window = self.current[(self.current.phi1.value > -65) & (self.current.phi1.value < -22)]
 
             # evaluate the ll using KDE
-            kde_phi2_model = KernelDensity(kernel='gaussian', 
-                                     bandwidth=0.11).fit(np.array([(model_window.phi1.value + 42)/10, 
+            kde_phi2_model = KernelDensity(kernel='gaussian',
+                                     bandwidth=0.11).fit(np.array([(model_window.phi1.value + 42)/10,
                                                                    model_window.phi2]).T)
-            loglike_phi2_model = kde_phi2_model.score_samples(np.array([(self.data.phi1.flatten()+42)/10, 
+            loglike_phi2_model = kde_phi2_model.score_samples(np.array([(self.data.phi1.flatten()+42)/10,
                                                              self.data.phi2.flatten()]).T)
             loglike_phi2_model = np.sum(loglike_phi2_model)
 
             kde_pm1 = KernelDensity(kernel='gaussian',
                                     bandwidth=0.21).fit(np.array([(model_window.phi1.value +42)/15,
                                                                   model_window.pm_phi1_cosphi2]).T)
-            loglike_pm1 = kde_pm1.score_samples(np.array([(self.data.phi1.flatten()+42)/15, 
+            loglike_pm1 = kde_pm1.score_samples(np.array([(self.data.phi1.flatten()+42)/15,
                                                            self.data.pm1.flatten()]).T)
             loglike_pm1 = np.sum(loglike_pm1)
 
-            kde_pm2 = KernelDensity(kernel='gaussian', 
-                                    bandwidth=0.285).fit(np.array([(model_window.phi1.value+42)/15, 
+            kde_pm2 = KernelDensity(kernel='gaussian',
+                                    bandwidth=0.285).fit(np.array([(model_window.phi1.value+42)/15,
                                                                   model_window.pm_phi2]).T)
-            loglike_pm2 = kde_pm2.score_samples(np.array([(self.data.phi1.flatten()+42)/15, 
+            loglike_pm2 = kde_pm2.score_samples(np.array([(self.data.phi1.flatten()+42)/15,
                                                            self.data.pm2.flatten()]).T)
             loglike_pm2 = np.sum(loglike_pm2)
 
-            kde_rv = KernelDensity(kernel='gaussian', 
-                                   bandwidth=0.82).fit(np.array([model_window.phi1.value*5, 
+            kde_rv = KernelDensity(kernel='gaussian',
+                                   bandwidth=0.82).fit(np.array([model_window.phi1.value*5,
                                                                 model_window.radial_velocity]).T)
             loglike_rv = kde_rv.score_samples(np.array([self.gd1_rv_bonaca.phi1*5,
                                                         self.gd1_rv_bonaca.Vrad]).T)
             loglike_rv = np.sum(loglike_rv)
 
             ll = loglike_phi2_model + loglike_pm1 + loglike_pm2 + loglike_rv
-            
+
             ###############################################
             ## EVALUATE LOG-LIKELIHOOD IN SMALLER REGION ##
             ###############################################
@@ -216,29 +216,29 @@ class FitPert:
             model_window_short = self.current[(self.current.phi1.value > -43) & (self.current.phi1.value < -25)]
 
             # evaluate the ll using KDE
-            kde_phi2_short = KernelDensity(kernel='gaussian', 
-                                     bandwidth=0.11).fit(np.array([(model_window_short.phi1.value)/10, 
+            kde_phi2_short = KernelDensity(kernel='gaussian',
+                                     bandwidth=0.11).fit(np.array([(model_window_short.phi1.value)/10,
                                                                    model_window_short.phi2]).T)
-            loglike_phi2_short = kde_phi2_short.score_samples(np.array([(self.data_short.phi1.flatten())/10, 
+            loglike_phi2_short = kde_phi2_short.score_samples(np.array([(self.data_short.phi1.flatten())/10,
                                                              self.data_short.phi2.flatten()]).T)
             loglike_phi2_short = np.sum(loglike_phi2_short)
 
             kde_pm1_short = KernelDensity(kernel='gaussian',
                                     bandwidth=0.21).fit(np.array([(model_window_short.phi1.value)/15,
                                                                   model_window_short.pm_phi1_cosphi2]).T)
-            loglike_pm1_short = kde_pm1_short.score_samples(np.array([(self.data_short.phi1.flatten())/15, 
+            loglike_pm1_short = kde_pm1_short.score_samples(np.array([(self.data_short.phi1.flatten())/15,
                                                            self.data_short.pm1.flatten()]).T)
             loglike_pm1_short = np.sum(loglike_pm1_short)
 
-            kde_pm2_short = KernelDensity(kernel='gaussian', 
-                                    bandwidth=0.285).fit(np.array([(model_window_short.phi1.value)/15, 
+            kde_pm2_short = KernelDensity(kernel='gaussian',
+                                    bandwidth=0.285).fit(np.array([(model_window_short.phi1.value)/15,
                                                                   model_window_short.pm_phi2]).T)
-            loglike_pm2_short = kde_pm2_short.score_samples(np.array([(self.data_short.phi1.flatten())/15, 
+            loglike_pm2_short = kde_pm2_short.score_samples(np.array([(self.data_short.phi1.flatten())/15,
                                                            self.data_short.pm2.flatten()]).T)
             loglike_pm2_short = np.sum(loglike_pm2_short)
 
-            kde_rv_short = KernelDensity(kernel='gaussian', 
-                                   bandwidth=0.82).fit(np.array([model_window_short.phi1.value * 5, 
+            kde_rv_short = KernelDensity(kernel='gaussian',
+                                   bandwidth=0.82).fit(np.array([model_window_short.phi1.value * 5,
                                                                 model_window_short.radial_velocity]).T)
             loglike_rv_short = kde_rv_short.score_samples(np.array([self.gd1_rv_bonaca_short.phi1 * 5,
                                                         self.gd1_rv_bonaca_short.Vrad]).T)
@@ -261,18 +261,16 @@ class FitPert:
             ## Calculate the apocenter and pericenter
             orbit_pert = self.mw.integrate_orbit(orbits[-1,0], dt=-1*u.Myr, n_steps=12000)
             pert_apo, pert_peri = orbit_pert.apocenter().value, orbit_pert.pericenter().value
-            
+
             # Doing KDE on the data
             #############################
             ## EVALUATE LOG-LIKELIHOOD ##
             #############################
             kde_phi2_data = KernelDensity(kernel='gaussian', bandwidth=0.15).fit(
                                 np.array([(self.data.phi1.flatten() + 42)/10, self.data.phi2.flatten()]).T)
-            loglike_phi2_data = kde_phi2_data.score_samples(np.array([(model_window.phi1.value+42)/10, 
+            loglike_phi2_data = kde_phi2_data.score_samples(np.array([(model_window.phi1.value+42)/10,
                                                              model_window.phi2.value]).T)
             loglike_phi2_data = np.sum(loglike_phi2_data)
             ll_data = loglike_phi2_data
-        
+
         return ll, ll_short, ll_phi2_short, ll_data, gap_ratio, pert_apo, pert_peri
-        
-        
