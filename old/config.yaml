@@ -18,11 +18,11 @@ grid_z: 0.2
 # velocity in z direction in cylindrical coordinates of the stream
 min_vz: 50
 # if max is higher than 300, the perturber is unbound to the MW
-max_vz: 250 
+max_vz: 250
 grid_vz: 25
 #min_vz: 150
 # if max is higher than 300, the perturber is unbound to the MW
-#max_vz: 210 
+#max_vz: 210
 #grid_vz: 5
 
 # velocity in angle direction in cylindrical coordinates of the stream
