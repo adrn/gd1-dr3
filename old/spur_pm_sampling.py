@@ -66,7 +66,7 @@ if __name__ == '__main__':
     g_sorted, obs_pm_all, obs_pm_cov_all, phi1_stream_all, phi2_stream_all, bkg_ind = pmf.pre_model(gaia, g, after)
     ln_bg_prob_all = after.pm_ln_bkg_prob.astype('float64')
     ln_bg_prob = ln_bg_prob_all[bkg_ind]
-    
+
     #######################
     ## WRITING THE MODEL ##
     #######################
@@ -75,17 +75,17 @@ if __name__ == '__main__':
         alpha = pm.Uniform('alpha', lower = 0, upper = 1)
         beta = pm.Uniform('beta', lower=0, upper = 1, testval=0.3)
 
-        loglike_fg_pm, loglike_fg_pm_all = pmf.short_pm_model_spur(model, obs_pm_all, obs_pm_cov_all, 
+        loglike_fg_pm, loglike_fg_pm_all = pmf.short_pm_model_spur(model, obs_pm_all, obs_pm_cov_all,
                                                                phi1_stream_all, bkg_ind)
         ll_fg_pm = tt.log(alpha) + loglike_fg_pm
 
-        loglike_fg_phi2, loglike_fg_phi2_all = pmf.short_phi2_model_spur(model, phi1_stream_all, 
+        loglike_fg_phi2, loglike_fg_phi2_all = pmf.short_phi2_model_spur(model, phi1_stream_all,
                                                                                 phi2_stream_all, bkg_ind,)
         loglike_fg_phi2 = loglike_fg_phi2.reshape(loglike_fg_pm.shape)
         ll_fg_phi2 = tt.log(beta) + loglike_fg_phi2
 
-        loglike_fg_spur =pmf.short_spur_model(model, phi1_stream_all, phi2_stream_all, 
-                                                                  obs_pm_all, obs_pm_cov_all, bkg_ind)   
+        loglike_fg_spur =pmf.short_spur_model(model, phi1_stream_all, phi2_stream_all,
+                                                                  obs_pm_all, obs_pm_cov_all, bkg_ind)
         loglike_fg_spur = loglike_fg_spur.reshape(loglike_fg_pm.shape)
         ll_fg_phi2_spur = tt.log(alpha) + tt.log(1-beta) + loglike_fg_spur
 
@@ -100,13 +100,13 @@ if __name__ == '__main__':
 
         loglike = pm.logaddexp(ll_fg_full, ll_bg_full)
         pm.Potential("loglike", loglike)
-        
+
         #######################
         ## OPTIMIZE THE MODEL##
         #######################
         res, logp = pmx.optimize(start={'b4': 0.45,
                                     'std_phi2_spur': 0.15,
-                                    'beta': 0.3}, 
+                                    'beta': 0.3},
                                  return_info = True)
 
         #######################

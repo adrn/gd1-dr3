@@ -56,7 +56,7 @@ class DirectNBody:
                              "Python-only.")
 
         self.w0 = w0
-        
+
     @property
     def w0(self):
         return self._w0
