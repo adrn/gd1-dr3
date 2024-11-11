@@ -24,14 +24,14 @@ from astropy.io import fits
 rnd = np.random.RandomState(seed=42)
 
 class OrbitFit:
-    
+
     def __init__(self):
         # basic code that will be optimized
         self.df = ms.FardalStreamDF()
         self.phi1_prog = -13
 
         after = GaiaData('../data/member_prob_all.fits')
-        self.model_output = after[(after.post_member_prob > 0.3) & 
+        self.model_output = after[(after.post_member_prob > 0.3) &
                              (-60 < after.phi1.flatten()) & (after.phi1.flatten() < -20) & #just the region of the spur
                              (after.phi2.flatten() < 0.5)] # don't include the spur in the fit
         fn = '../data/sample_outputs/trace0.netcdf'
@@ -45,7 +45,7 @@ class OrbitFit:
         rv_bonaca_data = fits.open('../data/rv_catalog.fits')[1].data
         gd1_rv_bonaca = rv_bonaca_data[rv_bonaca_data.pmmem & rv_bonaca_data.cmdmem & rv_bonaca_data.vrmem & rv_bonaca_data.fehmem]
         self.var_rv = gd1_rv_bonaca.std_Vrad**2
-        
+
 
         # Given a phi1 value, get the other values of the progenitor from the proper motion model
         from_pm = fits.open('../data/pm_model_output.fits')[1].data
@@ -59,13 +59,13 @@ class OrbitFit:
         self.spline_pm2_std = InterpolatedUnivariateSpline(from_pm['phi1'][::5], from_pm['pm2_std'][::5])
 
         sections = np.arange(-100,15,5)
-        dm = np.concatenate([[14.7, 14.6, 14.5, 14.45, 14.4, 14.35, 14.3, 14.3], 
-                             np.linspace(14.3, 14.6, 9), 
+        dm = np.concatenate([[14.7, 14.6, 14.5, 14.45, 14.4, 14.35, 14.3, 14.3],
+                             np.linspace(14.3, 14.6, 9),
                              [14.71, 14.75, 14.8, 15, 15.2, 15.4]])
         self.spline_dm_true = UnivariateSpline(sections, dm, k=5)
 
         rv_bonaca_data = fits.open('../data/rv_catalog.fits')[1].data
-        gd1_rv_bonaca = rv_bonaca_data[rv_bonaca_data.pmmem & rv_bonaca_data.cmdmem & 
+        gd1_rv_bonaca = rv_bonaca_data[rv_bonaca_data.pmmem & rv_bonaca_data.cmdmem &
                                        rv_bonaca_data.vrmem & rv_bonaca_data.fehmem]
         self.gd1_rv_bonaca = gd1_rv_bonaca[gd1_rv_bonaca.phi1.argsort()]
 
@@ -125,7 +125,7 @@ class OrbitFit:
         det = a * d - b * c
 
         numer = (
-                d * diff_pm[:, 0] ** 2 
+                d * diff_pm[:, 0] ** 2
                 + a * diff_pm[:, 1] ** 2
                 - (b + c) * diff_pm[:, 0] * diff_pm[:, 1]
             )
@@ -135,7 +135,7 @@ class OrbitFit:
 
 
         diff_phi2 = self.model_output.phi2 - spline_phi2(self.model_output.phi1)
-        #need the phi2 uncertainties from the 
+        #need the phi2 uncertainties from the
         ll_phi2 = np.sum(-0.5 * (np.log(self.var_phi2) + ((diff_phi2**2)/self.var_phi2) + np.log(2*np.pi)))
 
         diff_rv = self.gd1_rv_bonaca.Vrad - spline_rv(self.gd1_rv_bonaca.phi1)
@@ -149,7 +149,7 @@ class OrbitFit:
     def logprob(self, vals):
         lp = self.lnprior(vals)
         if not np.isfinite(lp):
-            return -np.inf 
+            return -np.inf
         return lp + self.loglik(vals)
 
     def min_logprob(self, vals):
@@ -169,15 +169,15 @@ nsteps = 1500
 ndim, nwalkers = 3, 8
 
 def create_IC():
-    
+
     ret_array = np.zeros(ndim)
-    
+
     ret_array[0] = np.random.normal(-10.8, 0.5)
     ret_array[1] = np.random.normal(-2.5, 0.5)
     ret_array[2] = np.random.normal(-185, 30)
     ret_array[3] = np.random.normal(8.7, 0.5)
     #ret_array[4] = np.random.uniform(3.5, 4.5)
-    
+
     return ret_array
 
 def create_IC_walkers():
@@ -185,14 +185,14 @@ def create_IC_walkers():
 
 if __name__ == '__main__':
     ICs = create_IC_walkers()
-    
+
     outfile = '../data/orbit_output/samples3.h5'
-    
+
     backend = emcee.backends.HDFBackend(outfile)
     backend.reset(nwalkers, ndim)
-    
+
     sampler = emcee.EnsembleSampler(nwalkers=nwalkers, ndim=ndim, log_prob_fn=logprob, backend=backend)
     pos, prob, state = sampler.run_mcmc(ICs, nsteps, progress=True)
-    
+
     samples = sampler.chain[:, :, :].reshape((-1, ndim))
 '''
