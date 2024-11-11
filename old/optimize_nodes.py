@@ -77,7 +77,7 @@ for i in range(8, 13):
             alpha = pm.Uniform('alpha', lower = 0, upper = 1, testval=5e-4)
             beta = pm.Uniform('beta', lower=0, upper = 1, testval=0.3)
 
-            loglike_fg_pm, loglike_fg_pm_all = pmf.pm_model_spline(model, obs_pm_all, obs_pm_cov_all, 
+            loglike_fg_pm, loglike_fg_pm_all = pmf.pm_model_spline(model, obs_pm_all, obs_pm_cov_all,
                                                                    phi1_stream_all, bkg_ind, n_pm_nodes)
             ll_fg_pm = pm.Deterministic('ll_fg_pm', tt.log(alpha) + loglike_fg_pm)
             ll_fg_pm_all = pm.Deterministic('ll_fg_pm_all', tt.log(alpha) + loglike_fg_pm_all)
@@ -92,12 +92,12 @@ for i in range(8, 13):
             loglike_fg_spur, loglike_fg_spur_all = pmf.spur_model(model, phi1_stream_all, phi2_stream_all, bkg_ind)
             loglike_fg_spur_all = loglike_fg_spur_all.reshape(loglike_fg_pm_all.shape)
             loglike_fg_spur = loglike_fg_spur.reshape(loglike_fg_pm.shape)
-            ll_fg_phi2_spur_all = pm.Deterministic('ll_fg_phi2_spur_all', 
+            ll_fg_phi2_spur_all = pm.Deterministic('ll_fg_phi2_spur_all',
                                                    tt.log(alpha) + tt.log(1-beta) + loglike_fg_spur_all)
             ll_fg_phi2_spur = pm.Deterministic('ll_fg_phi2_spur', tt.log(alpha) + tt.log(1-beta) + loglike_fg_spur)
 
             #total track likelihood (including spur)
-            loglike_fg_phi2_total_all = pm.Deterministic('ll_fg_phi2_total_all', 
+            loglike_fg_phi2_total_all = pm.Deterministic('ll_fg_phi2_total_all',
                                                          pm.logaddexp(loglike_fg_phi2_all, loglike_fg_spur_all))
             loglike_fg_phi2_total = pm.Deterministic('ll_fg_phi2_total', pm.logaddexp(loglike_fg_phi2, loglike_fg_spur))
 
@@ -118,7 +118,7 @@ for i in range(8, 13):
 
             res, logp = pmx.optimize(start={'b4': 0.3,
                                       'ln_std_phi2_spur': np.log(0.1),
-                                      'beta': 0.3}, 
+                                      'beta': 0.3},
                                        return_info = True)
         print('logp = {}'.format(int(logp.fun)))
         if logp.fun < logp_best:
@@ -126,7 +126,7 @@ for i in range(8, 13):
             logp_best = int(logp.fun)
             n_pm_nodes_best = int(i)
             n_track_nodes_best = int(j)
-        print('Best is {} with {} pm nodes and {} track nodes'.format(logp_best, 
+        print('Best is {} with {} pm nodes and {} track nodes'.format(logp_best,
                                                                       n_pm_nodes_best, n_track_nodes_best))
         print('')
         print('')
