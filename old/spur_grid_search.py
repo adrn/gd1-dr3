@@ -167,5 +167,3 @@ if __name__ == '__main__':
         main(pool=pool, config_file = args.config_file)
 
     sys.exit(0)
-
-

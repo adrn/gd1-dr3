@@ -274,5 +274,3 @@ class FitPert:
             ll_data = loglike_phi2_data
 
         return ll, ll_short, ll_phi2_short, ll_data, gap_ratio, pert_apo, pert_peri
-
-
