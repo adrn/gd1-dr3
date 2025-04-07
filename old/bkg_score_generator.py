@@ -134,4 +134,3 @@ for i in trange(len(phi1_bins)-1):
 
 sorted_table = all_tbl[all_tbl['phi1'].argsort()]
 sorted_table.write('../data/sorted_pm_member_prob_all_stars_8comp.fits', overwrite=True)
-

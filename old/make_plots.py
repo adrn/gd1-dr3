@@ -312,4 +312,3 @@ if __name__ == '__main__':
     plt.show()
 
     save_gifs(100, orbits)
-
